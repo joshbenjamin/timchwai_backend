@@ -24,10 +24,16 @@ exports.getPlayerInTeamSeasons = async (req, res) => {
           .map((id) => parseInt(id, 10))
           .filter((id) => !isNaN(id));
 
-          const teamIds = req.query.teamIds
-          .split(',')
-          .map((id) => parseInt(id, 10))
-          .filter((id) => !isNaN(id));
+          let teamIds = req.query.teamIds;
+          let includeAllTeams = false;
+          if (teamIds === 'all'){
+            includeAllTeams = true;
+          } else {
+            teamIds = teamIds
+            .split(',')
+            .map((id) => parseInt(id, 10))
+            .filter((id) => !isNaN(id));
+          }
     
         if (!leagueSeasonIds.length) {
           res.status(400).send("Invalid leagueSeasonIds query parameter");
@@ -70,61 +76,64 @@ exports.getPlayerInTeamSeasons = async (req, res) => {
           //   order: Sequelize.literal("random()"),
           //   subQuery: false,
           // });
+          
+          const teamSeasonInclude = {
+            model: TeamSeason,
+            required: true,
+            where: {
+              league_season_id: {
+                [Op.in]: leagueSeasonIds,
+              },
+            },
+          };
+          
+          if (!includeAllTeams) {
+            teamSeasonInclude.where.team_id = {
+              [Op.in]: teamIds,
+            };
+          }
+          
           const randomPlayer = await Player.findOne({
             include: [
               {
                 model: PlayerTeamSeason,
                 required: true,
-                include: [
-                  {
-                    model: TeamSeason,
-                    required: true,
-                    // This will also only include one Career, use getPlayerById to get Careers
-                    where: { 
-                      league_season_id: {
-                        [Op.in]: leagueSeasonIds
-                      },
-                      team_id: {
-                        [Op.in]: teamIds,
-                      }, 
-                    },
-                  },
-                ],
+                include: [teamSeasonInclude],
               },
             ],
             where: {
-              id: 28
-            }
+              id: 259,
+            },
           });
 
-            if (randomPlayer){
-                logger.info(`Random player found: ${randomPlayer.name}`);
+          if (randomPlayer){
+              logger.info(`Random player found: ${randomPlayer.name}`);
 
-                const careers = await Career.findAll({
-                  include: [
-                    {
-                      model: Team,
-                      required: true,
-                    },
-                  ],
-                  where: {
-                    player_id: randomPlayer.id,
+              const careers = await Career.findAll({
+                include: [
+                  {
+                    model: Team,
+                    required: true,
                   },
-                });
+                ],
+                where: {
+                  player_id: randomPlayer.id,
+                },
+              });
 
-                if (!careers){
-                  logger.error(`No careers found for ${randomPlayer.name}`);
-                }
+              if (!careers){
+                logger.error(`No careers found for ${randomPlayer.name}`);
+              }
 
-                const data = {
-                  player: randomPlayer.toJSON(),
-                  career: careers.map(career => career.toJSON())
-                }
+              const data = {
+                player: randomPlayer.toJSON(),
+                career: careers.map(career => career.toJSON())
+              }
 
-                res.json(data);
-            } else {
-                res.status(404).send("No random player found");
-            }
+              res.json(data);
+          } else {
+              res.status(404).send("No random player found");
+          }
         }
       } catch (error) {
         console.error(error);

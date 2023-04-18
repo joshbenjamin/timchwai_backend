@@ -21,9 +21,15 @@ Player.init({
   },
   birth_date: {
     type: DataTypes.DATE,
+    allowNull: true
   },
   height: {
     type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  positions: {
+    type: DataTypes.ARRAY(DataTypes.STRING),
+    allowNull: true,
   },
   image: {
     type: DataTypes.STRING(512),
