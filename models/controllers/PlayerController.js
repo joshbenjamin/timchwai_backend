@@ -159,7 +159,8 @@ exports.getPlayerById = async (req, res) => {
 
     const player = await Player.findOne({
       where: {
-        id: playerId
+        // id: playerId
+        name: "Wayne Rooney"
       },
       include: [
         {
@@ -172,26 +173,37 @@ exports.getPlayerById = async (req, res) => {
             },
           ],
         },
-        {
-          model: Career,
-          required: true,
-          include: [
-            {
-              model: Team,
-              required: true
-            }
-          ]
-        }
       ],
       order: Sequelize.literal("random()"),
       subQuery: false,
     });
 
     if (player){
-        logger.info(player.toJSON());
-        res.json(player.toJSON());
+      const careers = await Career.findAll({
+        include: [
+          {
+            model: Team,
+            required: true,
+          },
+        ],
+        where: {
+          player_id: player.id,
+        },
+      });
+
+      if (!careers){
+        logger.error(`No careers found for ${randomPlayer.name}`);
+      }
+
+      const data = {
+        player: player.toJSON(),
+        career: careers.map(career => career.toJSON())
+      }
+
+      logger.info(data);
+      res.json(data);
     } else {
-        res.status(404).send("No random player found");
+        res.status(404).send("No player found");
     }
   } catch (error) {
     console.error(error);
