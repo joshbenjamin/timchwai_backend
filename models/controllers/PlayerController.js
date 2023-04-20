@@ -1,4 +1,4 @@
-const { Sequelize, Op } = require('sequelize');
+const { Sequelize, Op, fn, col } = require('sequelize');
 
 const Team = require('../Team');
 const TeamSeason = require('../TeamSeason');
@@ -159,8 +159,7 @@ exports.getPlayerById = async (req, res) => {
 
     const player = await Player.findOne({
       where: {
-        // id: playerId
-        name: "Wayne Rooney"
+        id: playerId
       },
       include: [
         {
@@ -174,7 +173,6 @@ exports.getPlayerById = async (req, res) => {
           ],
         },
       ],
-      order: Sequelize.literal("random()"),
       subQuery: false,
     });
 
@@ -200,7 +198,6 @@ exports.getPlayerById = async (req, res) => {
         career: careers.map(career => career.toJSON())
       }
 
-      logger.info(data);
       res.json(data);
     } else {
         res.status(404).send("No player found");

@@ -47,7 +47,7 @@ app.get('/api/random_player', async (req, res) => {
 });
 
 
-app.get('/api/leagues/', LeagueController.getAllLeagues);
+app.get('/api/leagues', LeagueController.getAllLeaguesWithSeasons);
 
 app.get('/api/league_seasons', LeagueController.getLeagueSeasons);
 
@@ -55,7 +55,7 @@ app.get('/api/teams_in_seasons', TeamController.getTeamsInLeagueSeasons);
 
 app.get('/api/player_in_team_seasons', PlayerController.getPlayerInTeamSeasons);
 
-app.get('/api/player/', PlayerController.getPlayerById);
+app.get('/api/player', PlayerController.getPlayerById);
 
 
 app.listen(PORT, () => {

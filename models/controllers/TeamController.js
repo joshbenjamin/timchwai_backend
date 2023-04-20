@@ -56,8 +56,8 @@ exports.getTeamsInLeagueSeasons = async (req, res) => {
       } else {
         const models = require('../../models');
         Team.associate(models);
-        TeamSeason.associate(models);
-        LeagueSeason.associate(models);
+        // TeamSeason.associate(models);
+        // LeagueSeason.associate(models);
   
         const teams = await Team.findAll({
           include: [
@@ -67,6 +67,7 @@ exports.getTeamsInLeagueSeasons = async (req, res) => {
               where: {
                 league_season_id: { [Sequelize.Op.in]: leagueSeasonIds },
               },
+              attributes: []
             },
           ],
           order: [['name', 'ASC']],
