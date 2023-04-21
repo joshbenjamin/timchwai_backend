@@ -71,7 +71,13 @@ exports.getPlayerInTeamSeasons = async (req, res) => {
                   },
                 ],
               },
+              {
+                model: Career, // Include the Career model
+                required: false, // Set required to false since we're using a HAVING clause
+              },
             ],
+            group: ['Player.id'], // Group by the player's ID
+            having: Sequelize.where(Sequelize.fn('COUNT', Sequelize.col('Careers.id')), '>=', 1), // Ensure the player has at least one career
             order: Sequelize.literal("random()"),
             subQuery: false,
           });
