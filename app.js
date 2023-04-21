@@ -16,7 +16,7 @@ const Sequelize = require('sequelize');
 
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -24,17 +24,6 @@ app.use(express.json());
 app.get('/', (req, res) => {
   res.send('Welcome to TIMCHWAI backend!');
 });
-
-const getRandomPlayer = async () => {
-
-  Player.findAll({ order: sequelize.literal('random()'), limit: 1 }).then((player) => {
-      // single random encounter
-      console.log(player);
-      return player;
-  }); 
-};
-  
-  
 
 app.get('/api/random_player', async (req, res) => {
   try {
@@ -45,7 +34,6 @@ app.get('/api/random_player', async (req, res) => {
     res.status(500).send('Internal Server Error');
   }
 });
-
 
 app.get('/api/leagues', LeagueController.getAllLeaguesWithSeasons);
 

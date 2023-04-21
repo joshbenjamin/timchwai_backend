@@ -4,6 +4,10 @@
   "description": "The backend API for TIMCHWAI, in Node.js",
   "main": "index.js",
   "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "build:testing": "env-cmd -f .env.testing react-scripts build",
+    "build:staging": "env-cmd -f .env.staging react-scripts build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Josh Benjamin",
