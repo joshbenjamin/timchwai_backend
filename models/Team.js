@@ -17,7 +17,7 @@ Team.init({
     type: DataTypes.STRING,
   },
   nicknames: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(512),
   },
   founded: {
     type: DataTypes.INTEGER,

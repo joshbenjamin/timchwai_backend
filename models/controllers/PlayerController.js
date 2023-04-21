@@ -51,59 +51,29 @@ exports.getPlayerInTeamSeasons = async (req, res) => {
           PlayerTeamSeason.associate(models);
           Career.associate(models);
     
-          // const randomPlayer = await Player.findOne({
-          //   include: [
-          //     {
-          //       model: PlayerTeamSeason,
-          //       required: true,
-          //       include: [
-          //         {
-          //           model: TeamSeason,
-          //           required: true,
-          //           // This will also only include one Career, use getPlayerById to get Careers
-          //           where: { 
-          //             league_season_id: {
-          //               [Op.in]: leagueSeasonIds
-          //             },
-          //             team_id: {
-          //               [Op.in]: teamIds,
-          //             }, 
-          //           },
-          //         },
-          //       ],
-          //     },
-          //   ],
-          //   order: Sequelize.literal("random()"),
-          //   subQuery: false,
-          // });
-          
-          const teamSeasonInclude = {
-            model: TeamSeason,
-            required: true,
-            where: {
-              league_season_id: {
-                [Op.in]: leagueSeasonIds,
-              },
-            },
-          };
-          
-          if (!includeAllTeams) {
-            teamSeasonInclude.where.team_id = {
-              [Op.in]: teamIds,
-            };
-          }
-          
           const randomPlayer = await Player.findOne({
             include: [
               {
                 model: PlayerTeamSeason,
                 required: true,
-                include: [teamSeasonInclude],
+                include: [
+                  {
+                    model: TeamSeason,
+                    required: true,
+                    where: { 
+                      league_season_id: {
+                        [Op.in]: leagueSeasonIds
+                      },
+                      team_id: {
+                        [Op.in]: teamIds,
+                      }, 
+                    },
+                  },
+                ],
               },
             ],
-            where: {
-              id: 259,
-            },
+            order: Sequelize.literal("random()"),
+            subQuery: false,
           });
 
           if (randomPlayer){
