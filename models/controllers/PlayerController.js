@@ -6,7 +6,7 @@ const LeagueSeason = require('../LeagueSeason');
 const PlayerTeamSeason = require('../PlayerTeamSeason');
 const Player = require('../Player');
 const Career = require('../Career');
-const logger = require('../../../scraper/logger');
+const logger = require('../../logger');
 
 exports.getPlayerInTeamSeasons = async (req, res) => {
     try {
