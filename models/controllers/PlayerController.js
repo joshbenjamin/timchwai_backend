@@ -77,6 +77,11 @@ exports.getPlayerInTeamSeasons = async (req, res) => {
                 attributes: []
               },
             ],
+            where: {
+              name_basic: {
+                [Op.ne]: null
+              }
+            },
             order: Sequelize.literal("random()"),
             subQuery: false,
           });
