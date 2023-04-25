@@ -186,3 +186,21 @@ exports.getPlayerById = async (req, res) => {
     console.error(error);
   }
 };
+
+exports.getAllPlayerNames = async (req, res) => {
+  try {
+    const players = await Player.findAll({
+      attributes: ['name'],
+      order: [['name', 'ASC']],
+    });
+
+    if (players && players.length > 0) {
+      const playerNames = players.map(player => player.name);
+      res.json(playerNames);
+    } else {
+      res.status(404).send("No players found");
+    }
+  } catch (error) {
+    console.error(error);
+  }
+};

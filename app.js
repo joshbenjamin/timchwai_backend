@@ -45,6 +45,8 @@ app.get('/api/player_in_team_seasons', PlayerController.getPlayerInTeamSeasons);
 
 app.get('/api/player', PlayerController.getPlayerById);
 
+app.get('/api/player_names', PlayerController.getAllPlayerNames);
+
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
