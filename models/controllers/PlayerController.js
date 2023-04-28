@@ -187,16 +187,18 @@ exports.getPlayerById = async (req, res) => {
   }
 };
 
-exports.getAllPlayerNames = async (req, res) => {
+exports.getAllPlayerNameBasics = async (req, res) => {
   try {
     const players = await Player.findAll({
-      attributes: ['name'],
-      order: [['name', 'ASC']],
+      attributes: ['name_basic'],
+      group: ['name_basic'], // Group by 'name_basic'
+      order: [['name_basic', 'ASC']],
+      raw: true, // Set raw to true to get plain objects instead of Sequelize instances
     });
 
     if (players && players.length > 0) {
-      const playerNames = players.map(player => player.name);
-      res.json(playerNames);
+      const nameBasics = players.map(player => player.name_basic);
+      res.json(nameBasics);
     } else {
       res.status(404).send("No players found");
     }

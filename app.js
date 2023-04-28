@@ -45,7 +45,7 @@ app.get('/api/player_in_team_seasons', PlayerController.getPlayerInTeamSeasons);
 
 app.get('/api/player', PlayerController.getPlayerById);
 
-app.get('/api/player_names', PlayerController.getAllPlayerNames);
+app.get('/api/player_names', PlayerController.getAllPlayerNameBasics);
 
 
 app.listen(PORT, () => {
