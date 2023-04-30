@@ -206,3 +206,21 @@ exports.getAllPlayerNameBasics = async (req, res) => {
     console.error(error);
   }
 };
+
+exports.getAllPlayers = async (req, res) => {
+  try {
+    const players = await Player.findAll({
+      attributes: ['id', 'name', 'name_basic', 'birth_date'],
+      order: [['name_basic', 'ASC']],
+      raw: true, // Set raw to true to get plain objects instead of Sequelize instances
+    });
+
+    if (players && players.length > 0) {
+      res.json(players);
+    } else {
+      res.status(404).send("No players found");
+    }
+  } catch (error) {
+    console.error(error);
+  }
+};
