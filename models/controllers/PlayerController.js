@@ -99,6 +99,7 @@ exports.getPlayerInTeamSeasons = async (req, res) => {
                 where: {
                   player_id: randomPlayer.id,
                 },
+                order: [['from_year', 'ASC']]
               });
 
               if (!careers){
@@ -167,6 +168,7 @@ exports.getPlayerById = async (req, res) => {
         where: {
           player_id: player.id,
         },
+        order: [['from_year', 'ASC']]
       });
 
       if (!careers){
