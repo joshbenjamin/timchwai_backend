@@ -73,8 +73,19 @@ exports.getPlayerInTeamSeasons = async (req, res) => {
               },
               {
                 model: Career, // Include the Career model
-                required: true,
-                attributes: []
+                where: {
+                  to_year: null,
+                  type: {
+                    [Op.ne]: 'INTERNATIONAL'
+                  }
+                },
+                required: false,
+                include: [
+                  {
+                    model: Team,
+                    attributes: ['name']
+                  }
+                ]
               },
             ],
             where: {
@@ -144,14 +155,20 @@ exports.getPlayerById = async (req, res) => {
       },
       include: [
         {
-          model: PlayerTeamSeason,
-          required: true,
+          model: Career,
+          where: {
+            to_year: null,
+            type: {
+              [Op.ne]: 'INTERNATIONAL'
+            }
+          },
+          required: false,
           include: [
             {
-              model: TeamSeason,
-              required: true,
-            },
-          ],
+              model: Team,
+              attributes: ['name']
+            }
+          ]
         },
       ],
       subQuery: false,
