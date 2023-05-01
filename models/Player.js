@@ -23,6 +23,10 @@ Player.init({
     type: DataTypes.DATE,
     allowNull: true
   },
+  birth_palce: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
   height: {
     type: DataTypes.FLOAT,
     allowNull: true,
