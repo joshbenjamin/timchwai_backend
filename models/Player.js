@@ -23,7 +23,7 @@ Player.init({
     type: DataTypes.DATE,
     allowNull: true
   },
-  birth_palce: {
+  birth_place: {
     type: DataTypes.STRING,
     allowNull: true
   },
