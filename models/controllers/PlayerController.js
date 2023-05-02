@@ -72,11 +72,14 @@ exports.getPlayerInTeamSeasons = async (req, res) => {
                 ],
               },
               {
-                model: Career, // Include the Career model
+                model: Career,
                 where: {
                   to_year: null,
                   type: {
-                    [Op.ne]: 'INTERNATIONAL'
+                    [Op.or]: {
+                      [Op.ne]: 'INTERNATIONAL',
+                      [Op.ne]: 'MANAGER'
+                    }
                   }
                 },
                 required: false,
@@ -159,7 +162,10 @@ exports.getPlayerById = async (req, res) => {
           where: {
             to_year: null,
             type: {
-              [Op.ne]: 'INTERNATIONAL'
+              [Op.or]: {
+                [Op.ne]: 'INTERNATIONAL',
+                [Op.ne]: 'MANAGER'
+              }
             }
           },
           required: false,
