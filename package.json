@@ -8,7 +8,7 @@
     "build": "react-scripts build",
     "build:testing": "env-cmd -f .env.testing react-scripts build",
     "build:staging": "env-cmd -f .env.staging react-scripts build",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "NODE_ENV=test jest"
   },
   "author": "Josh Benjamin",
   "license": "ISC",
@@ -18,8 +18,10 @@
     "cors": "^2.8.5",
     "dotenv": "^16.0.3",
     "express": "^4.18.2",
+    "jest": "^29.5.0",
     "pg": "^8.10.0",
     "sequelize": "^6.31.0",
+    "supertest": "^6.3.3",
     "winston": "^3.8.2"
   }
 }
