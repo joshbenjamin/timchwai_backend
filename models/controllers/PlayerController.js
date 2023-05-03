@@ -53,11 +53,12 @@ exports.getPlayerById = async (req, res) => {
           include: [
             {
               model: Team,
-              attributes: ['name']
+              attributes: ['name', 'image'],
             }
-          ]
+          ],
         },
       ],
+      order: [[Career, 'from_year', 'ASC']],
       subQuery: false,
     });
 
@@ -73,6 +74,7 @@ exports.getPlayerById = async (req, res) => {
     res.status(500).send("Internal Server Error");
   }
 };
+
 
 exports.getRandomPlayer = async (req, res) => {
   Player.associate(models);
@@ -92,12 +94,15 @@ exports.getRandomPlayer = async (req, res) => {
           include: [
             {
               model: Team,
-              attributes: ['name']
+              attributes: ['name', 'image'],
             }
           ],
         },
       ],
-      order: literal("random()"),
+      order: [
+        [Career, 'from_year', 'ASC'], 
+        literal("random()")
+      ],
       subQuery: true,
     });
     
@@ -190,9 +195,10 @@ exports.getPlayerInTeamSeasons = async (req, res) => {
               include: [
                 {
                   model: Team,
-                  attributes: ['name']
+                  attributes: ['name', 'image'],
                 }
-              ]
+              ],
+              order: [['from_year', 'ASC']],
             });          
             playerJSON.Careers = careers;
 
