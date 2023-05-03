@@ -1,41 +1,35 @@
-const { Sequelize, Op } = require('sequelize');
+const { Op } = require('sequelize');
 
+const models = require('../../models');
 const Team = require('../Team');
 const TeamSeason = require('../TeamSeason');
-const LeagueSeason = require('../LeagueSeason');
 
-exports.getTeamSeasons = async (req, res) => {
+const logger = require('../../logger');
+
+exports.getTeams = async (req, res) => {
     try {
-        const leagueSeasonIds = req.query.leagueSeasonIds.split(',').map(Number);
+        Team.associate(models);
 
-        if (!leagueSeasonIds) {
-            res.status(400).send("Missing leagueSeasonIds query parameter");
-            return;
-        }
-        else {
-            const models = require('../../models');
-            Team.associate(models);
-            TeamSeason.associate(models);
-
-            const teamSeasons = await TeamSeason.findAll({
-                where: {
-                    league_season_id: {
-                        [Op.in]: leagueSeasonIds,
-                    },
-                },
-                include: [{
-                    model: Team, required: true
-                }]
-            });
-
-            if (teamSeasons){
-                res.json(teamSeasons.map(ts => ts.toJSON()));
-            } else {
-                res.status(404).send("No leagues found");
+        const teams = await Team.findAll({
+          include: 
+          [
+            {
+              model: TeamSeason,
+              required: false 
             }
+          ]
+        });
+
+        if (teams){
+          logger.info(`Teams found`);
+          res.json(teams.map(team => team.toJSON()));
+        } else {
+          logger.error(`Teams not found`);
+          res.status(404).send("No teams found");
         }
     } catch (error) {
-        console.error(error);
+        logger.error(error);
+        res.status(500).send("Internal Server Error");
     }
 };
 
@@ -54,10 +48,7 @@ exports.getTeamsInLeagueSeasons = async (req, res) => {
         res.status(400).send("Invalid leagueSeasonIds query parameter");
         return;
       } else {
-        const models = require('../../models');
         Team.associate(models);
-        // TeamSeason.associate(models);
-        // LeagueSeason.associate(models);
   
         const teams = await Team.findAll({
           include: [
@@ -65,7 +56,9 @@ exports.getTeamsInLeagueSeasons = async (req, res) => {
               model: TeamSeason,
               required: true,
               where: {
-                league_season_id: { [Sequelize.Op.in]: leagueSeasonIds },
+                league_season_id: { 
+                  [Op.in]: leagueSeasonIds 
+                },
               },
               attributes: []
             },
@@ -75,12 +68,15 @@ exports.getTeamsInLeagueSeasons = async (req, res) => {
         });
   
         if (teams) {
+          logger.info(`Teams found for leagueSeasonIds: ${leagueSeasonIds}`);
           res.json(teams.map((team) => team.toJSON()));
         } else {
+          logger.error(`No teams found for leagueSeasonIds: ${leagueSeasonIds}`);
           res.status(404).send("No teams found");
         }
       }
     } catch (error) {
-      console.error(error);
+      logger.error(error);
+      res.json(500).send("Internal Server Error");
     }
   };

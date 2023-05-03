@@ -9,7 +9,7 @@ const db = new Sequelize(DB_URL, {
   dialectOptions: {
     ssl: {
       require: process.env.DB_SSL === 'true',
-      rejectUnauthorized: false // You may want to set this to true in a production environment
+      rejectUnauthorized: true
     }
   }
 });

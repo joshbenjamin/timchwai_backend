@@ -1,54 +1,59 @@
-const { Sequelize, Op } = require('sequelize');
+const { Op } = require('sequelize');
 
+const models = require('../../models');
 const League = require('../League');
 const LeagueSeason = require('../LeagueSeason');
 const TeamSeason = require('../TeamSeason');
 
-exports.getAllLeagues = async (req, res) => {
-    try {
-        const models = require('../../models');
-        League.associate(models);
-        LeagueSeason.associate(models);
+const logger = require('../../logger');
 
-        const leagues = await League.findAll({});
+exports.getLeagues = async (req, res) => {
+    try {
+        const leagues = await League.findAll();
 
         if (leagues){
+            logger.info(`Leagues found`);
             res.json(leagues.map(league => league.toJSON()));
         } else {
+            logger.error(`No leagues found`);
             res.status(404).send("No leagues found");
         }
 
-      } catch (err) {
-        console.error(err);
+    } catch (err) {
+        logger.error(err);
         res.status(500).send("Internal Server Error");
-      }
+    }
 };
 
-exports.getAllLeaguesWithSeasons = async (req, res) => {
+exports.getLeaguesWithSeasons = async (req, res) => {
     try {
-        const models = require('../../models');
         League.associate(models);
-        LeagueSeason.associate(models);
 
         const leagues = await League.findAll({
             include: {
-                model: LeagueSeason,
-                attributes: [] // Add atts if you want more than count
+              model: LeagueSeason,
+              attributes: []
             },
-            group: ['League.id'],
-            having: LeagueSeason.sequelize.literal('COUNT("LeagueSeasons"."id") >= 1')
-        });
+            where: {
+              id: {
+                [Op.in]: LeagueSeason.sequelize.literal(
+                  '(SELECT "league_id" FROM "league_seasons" GROUP BY "league_id")'
+                ),
+              },
+            },
+          });          
 
         if (leagues){
+            logger.info(`Leagues with Seasons found`);
             res.json(leagues.map(league => league.toJSON()));
         } else {
+            logger.error(`Leagues with Seasons not found`);
             res.status(404).send("No leagues found");
         }
-
-      } catch (err) {
-        console.error(err);
+    } catch (err) {
+        logger.error(err);
         res.status(500).send("Internal Server Error");
-      }
+    }
 };
 
 exports.getLeagueSeasons = async (req, res) => {
@@ -63,10 +68,7 @@ exports.getLeagueSeasons = async (req, res) => {
           .map((id) => parseInt(id, 10))
           .filter((id) => !isNaN(id));
 
-        const models = require('../../models');
-        League.associate(models);
         LeagueSeason.associate(models);
-        TeamSeason.associate(models);
 
         const leagueSeasons = await LeagueSeason.findAll({
             include: [
@@ -77,7 +79,7 @@ exports.getLeagueSeasons = async (req, res) => {
                 },
                 {
                     model: League,
-                    attributes: ['name'], // Exclude attributes from the result, if not needed
+                    attributes: ['name'],
                 },
             ],
             where: {
@@ -85,20 +87,23 @@ exports.getLeagueSeasons = async (req, res) => {
                     [Op.in]: leagueIds
                 }
             },
+            attributes: ['id', 'from_year', 'to_year', 'wiki_link'],
             order: [
-                [League, 'name', 'ASC'], // Order by League.name
-                ['from_year', 'ASC'], // Then order by LeagueSeason.from_year
+                [League, 'name', 'ASC'],
+                ['from_year', 'ASC'],
             ],
             subQuery: false,
         });
 
         if (leagueSeasons){
+            logger.info(`Found League Seasons for LeagueIds: ${leagueIds}`);
             res.json(leagueSeasons.map(ls => ls.toJSON()));
         } else {
+            logger.error(`Found no League Seasons for LeagueIds: ${leagueIds}`);
             res.status(404).send("No leagues found");
         }
-        // }
         } catch (error) {
-            console.error(error);
+            logger.error(error);
+            res.status(500).send("Internal Server Error");
         }
-    };
+};
