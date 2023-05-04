@@ -58,7 +58,10 @@ exports.getPlayerById = async (req, res) => {
           ],
         },
       ],
-      order: [[Career, 'from_year', 'ASC']],
+      order: [
+        [Career, 'from_year', 'ASC'],
+        [Career, 'to_year', 'ASC'],
+      ],
       subQuery: false,
     });
 
@@ -100,7 +103,8 @@ exports.getRandomPlayer = async (req, res) => {
         },
       ],
       order: [
-        [Career, 'from_year', 'ASC'], 
+        [Career, 'from_year', 'ASC'],
+        [Career, 'to_year', 'ASC'],
         literal("random()")
       ],
       subQuery: true,
@@ -198,7 +202,11 @@ exports.getPlayerInTeamSeasons = async (req, res) => {
                   attributes: ['name', 'image'],
                 }
               ],
-              order: [['from_year', 'ASC']],
+              order: [
+                ['from_year', 'ASC'],
+                ['to_year', 'ASC'],
+
+              ],
             });          
             playerJSON.Careers = careers;
 
