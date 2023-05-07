@@ -79,11 +79,12 @@ exports.getPlayerById = async (req, res) => {
 };
 
 
-exports.getRandomPlayer = async (req, res) => {
+exports.getRandomPlayerOld = async (req, res) => {
   Player.associate(models);
   Career.associate(models);
 
   try {
+
     const player = await Player.findOne({
       where: {
         name_basic: {
@@ -123,6 +124,91 @@ exports.getRandomPlayer = async (req, res) => {
     res.status(500).send("Internal Server Error");
   }
 };
+
+
+exports.getRandomPlayer = async (req, res) => {
+  Player.associate(models);
+  Career.associate(models);
+  Team.associate(models);
+
+  try {
+    const playerId = await Player.findOne({
+      attributes: ['id'],
+      where: {
+        name_basic: {
+          [Op.ne]: null
+        }
+      },
+      include: [
+        {
+          model: Career,
+          required: true,
+          attributes: ['id', 'apps'],
+          where: {
+            apps: {
+              [Op.gte]: 20
+            }
+          },
+          include: [
+            {
+              model: Team,
+              required: true,
+              attributes: ['id'],
+              include: [
+                {
+                  model: TeamSeason,
+                  required: true,
+                  attributes: ['id']
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      group: ['Player.id', 'Careers.id', 'Careers->Team.id', 'Careers->Team->TeamSeasons.id'],
+      having: literal('SUM("Careers"."apps") >= 50'),
+      order: [
+        literal('random()')
+      ],
+      subQuery: false
+    });
+
+     const player = await Player.findOne({
+      where: {
+        id: playerId.id
+      },
+      include: [
+        {
+          model: Career,
+          required: false,
+          include: [
+            {
+              model: Team,
+              attributes: ['name', 'image'],
+            }
+          ],
+        },
+      ],
+      order: [
+        [Career, 'from_year', 'ASC'],
+        [Career, 'to_year', 'ASC']
+      ],
+      subQuery: true,
+    });
+
+    if (player){
+      logger.info("Random player found");
+      res.json(player.toJSON());
+    } else {
+      logger.error("No random player found");
+      res.status(404).send("No random player found");
+    }
+  } catch (error) {
+    logger.error(error);
+    res.status(500).send("Internal Server Error");
+  }
+};
+
 
 exports.getPlayerInTeamSeasons = async (req, res) => {
     try {
