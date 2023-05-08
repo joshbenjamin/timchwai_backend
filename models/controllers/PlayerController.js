@@ -146,7 +146,7 @@ exports.getRandomPlayer = async (req, res) => {
           attributes: ['id', 'apps'],
           where: {
             apps: {
-              [Op.gte]: 20
+              [Op.gte]: 30
             }
           },
           include: [
@@ -166,7 +166,7 @@ exports.getRandomPlayer = async (req, res) => {
         }
       ],
       group: ['Player.id', 'Careers.id', 'Careers->Team.id', 'Careers->Team->TeamSeasons.id'],
-      having: literal('SUM("Careers"."apps") >= 50'),
+      having: literal('SUM("Careers"."apps") >= 60'),
       order: [
         literal('random()')
       ],
