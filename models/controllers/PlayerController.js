@@ -325,7 +325,7 @@ exports.getPlayerInEuros2024 = async (req, res) => {
   });
 
   if (!league) {
-    throw new Error(`League not found with name: ${leagueName}`);
+    throw new Error(`League not found with name: Euros`);
     return;
   }
   else{
