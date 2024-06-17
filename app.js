@@ -40,6 +40,8 @@ app.get('/api/random_player', PlayerController.getRandomPlayer);
 
 app.get('/api/player_in_team_seasons', PlayerController.getPlayerInTeamSeasons);
 
+app.get('/api/random_euros_2024', PlayerController.getPlayerInEuros2024);
+
 
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {

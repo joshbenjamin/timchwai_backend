@@ -6,6 +6,8 @@ const TeamSeason = require('../TeamSeason');
 const PlayerTeamSeason = require('../PlayerTeamSeason');
 const Player = require('../Player');
 const Career = require('../Career');
+const League = require('../League');
+const LeagueSeason = require('../LeagueSeason');
 
 const logger = require('../../logger');
 
@@ -307,4 +309,91 @@ exports.getPlayerInTeamSeasons = async (req, res) => {
         logger.error(error);
         res.status(500).send("Internal Server Error");
       }
+};
+
+exports.getPlayerInEuros2024 = async (req, res) => {
+  PlayerTeamSeason.associate(models);
+  TeamSeason.associate(models);
+  Team.associate(models);
+  LeagueSeason.associate(models);
+  League.associate(models);
+  Player.associate(models);
+  Career.associate(models);
+
+  const league = await League.findOne({
+    where: { name: "Euros" },
+  });
+
+  if (!league) {
+    throw new Error(`League not found with name: ${leagueName}`);
+    return;
+  }
+  else{
+    logger.info(`League Found: ${league.name}`);
+  }
+
+  const leagueSeason = await LeagueSeason.findOne({
+    where: { league_id: league.id, from_year: 2024, to_year: 2024 },
+  });
+
+  if (!leagueSeason) {
+    throw new Error(`LeagueSeason not found for league_id: ${league.id} and ${2024}`);
+  }
+  else{
+    logger.info(`League Season found: ${leagueSeason.from_year} to ${leagueSeason.to_year}`);
+  }
+  
+  const randomPlayerId = await Player.findOne({
+    attributes: ['id'],
+    include: {
+      model: PlayerTeamSeason,
+      include: {
+        model: TeamSeason,
+        include: {
+          model: LeagueSeason,
+          where: {
+            id: leagueSeason.id
+          }
+        }
+      }
+    },
+    order: literal("random()"),
+    subQuery: false,
+  });
+
+  const player = await Player.findOne({
+      where: {
+        id: randomPlayerId.id
+      },
+      include: [
+        {
+          model: Career,
+          required: false,
+          include: [
+            {
+              model: Team,
+              attributes: ['name', 'image'],
+            }
+          ],
+        },
+      ],
+      order: [
+        [Career, 'from_year', 'ASC'],
+        [Career, 'to_year', 'ASC']
+      ],
+      subQuery: true,
+  });
+
+  try {
+    if (player){
+      logger.info("Random player found");
+      res.json(player.toJSON());
+    } else {
+      logger.error("No random player found");
+      res.status(404).send("No random player found");
+    }
+  } catch (error) {
+    logger.error(error);
+    res.status(500).send("Internal Server Error");
+  }
 };
