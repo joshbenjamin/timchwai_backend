@@ -9,6 +9,7 @@ const Career = require('../Career');
 const League = require('../League');
 const LeagueSeason = require('../LeagueSeason');
 
+const db = require('../../database');
 const logger = require('../../logger');
 
 exports.getAllPlayers = async (req, res) => {
@@ -168,7 +169,7 @@ exports.getRandomPlayer = async (req, res) => {
         }
       ],
       group: ['Player.id', 'Careers.id', 'Careers->Team.id', 'Careers->Team->TeamSeasons.id'],
-      having: literal('SUM("Careers"."apps") >= 60'),
+      having: literal('SUM("Careers"."apps") >= 100'),
       order: [
         literal('random()')
       ],
@@ -342,58 +343,73 @@ exports.getPlayerInEuros2024 = async (req, res) => {
   else{
     logger.info(`League Season found: ${leagueSeason.from_year} to ${leagueSeason.to_year}`);
   }
-  
-  const randomPlayerId = await Player.findOne({
-    attributes: ['id'],
-    include: {
-      model: PlayerTeamSeason,
-      include: {
-        model: TeamSeason,
-        include: {
-          model: LeagueSeason,
-          where: {
-            id: leagueSeason.id
-          }
-        }
-      }
-    },
-    order: literal("random()"),
-    subQuery: false,
-  });
 
-  const player = await Player.findOne({
-      where: {
-        id: randomPlayerId.id
-      },
-      include: [
-        {
-          model: Career,
-          required: false,
-          include: [
-            {
-              model: Team,
-              attributes: ['name', 'image'],
-            }
-          ],
-        },
-      ],
-      order: [
-        [Career, 'from_year', 'ASC'],
-        [Career, 'to_year', 'ASC']
-      ],
-      subQuery: true,
-  });
+  const leagueSeasonId = leagueSeason.id;
+
+  if (!leagueSeasonId) {
+    console.error("leagueSeasonId is undefined or null");
+    throw new Error("Invalid leagueSeasonId");
+  }
+
+  console.log("leagueSeasonId:", leagueSeasonId);
+
+  const query = `SELECT players.id
+      FROM players
+      JOIN player_team_seasons ps ON players.id = ps.player_id
+      JOIN team_seasons ts ON ps.team_season_id = ts.id
+      JOIN league_seasons ls ON ts.league_season_id = ls.id
+      JOIN leagues lg ON ls.league_id = lg.id
+      WHERE ls.id = :leagueSeasonId
+      ORDER BY RANDOM() LIMIT 1;`;
 
   try {
-    if (player){
-      logger.info("Random player found");
-      res.json(player.toJSON());
+    const [results, metadata] = await db.query(query, {
+      replacements: { leagueSeasonId },
+    });
+
+    const randomPlayerId = results.length > 0 ? results[0].id : null;
+
+    if (randomPlayerId) {    
+      const player = await Player.findOne({
+          where: {
+            id: randomPlayerId
+          },
+          include: [
+            {
+              model: Career,
+              required: false,
+              include: [
+                {
+                  model: Team,
+                  attributes: ['name', 'image'],
+                }
+              ],
+            },
+          ],
+          order: [
+            [Career, 'from_year', 'ASC'],
+            [Career, 'to_year', 'ASC']
+          ],
+          subQuery: true,
+      });
+    
+      try {
+        if (player){
+          logger.info("Random player found");
+          res.json(player.toJSON());
+        } else {
+          logger.error("No random player found");
+          res.status(404).send("No random player found");
+        }
+      } catch (error) {
+        logger.error(error);
+        res.status(500).send("Internal Server Error");
+      }
+
     } else {
-      logger.error("No random player found");
-      res.status(404).send("No random player found");
+      console.error("No player found for the given league season");
     }
   } catch (error) {
-    logger.error(error);
-    res.status(500).send("Internal Server Error");
+    console.error("Error executing query:", error);
   }
 };
