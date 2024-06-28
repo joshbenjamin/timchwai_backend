@@ -18,6 +18,11 @@ exports.getAllPlayers = async (req, res) => {
       attributes: ['id', 'name', 'name_basic', 'birth_date'],
       order: [['name_basic', 'ASC']],
       raw: true,
+      where: {
+        name_basic: {
+          [Op.ne]: null
+        }
+      }
     });
 
     if (players && players.length > 0) {
@@ -170,6 +175,11 @@ exports.getRandomPlayer = async (req, res) => {
       ],
       group: ['Player.id', 'Careers.id', 'Careers->Team.id', 'Careers->Team->TeamSeasons.id'],
       having: literal('SUM("Careers"."apps") >= 100'),
+      where: {
+        name_basic: {
+          [Op.ne]: null
+        }
+      },
       order: [
         literal('random()')
       ],
@@ -353,13 +363,13 @@ exports.getPlayerInEuros2024 = async (req, res) => {
 
   console.log("leagueSeasonId:", leagueSeasonId);
 
-  const query = `SELECT players.id
+  const query = `SELECT players.id, players.name_basic
       FROM players
       JOIN player_team_seasons ps ON players.id = ps.player_id
       JOIN team_seasons ts ON ps.team_season_id = ts.id
       JOIN league_seasons ls ON ts.league_season_id = ls.id
       JOIN leagues lg ON ls.league_id = lg.id
-      WHERE ls.id = :leagueSeasonId
+      WHERE ls.id = :leagueSeasonId AND players.name_basic IS NOT NULL
       ORDER BY RANDOM() LIMIT 1;`;
 
   try {
