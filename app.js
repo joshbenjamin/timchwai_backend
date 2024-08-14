@@ -8,9 +8,12 @@ const TeamController = require('./models/controllers/TeamController');
 require('dotenv').config();
 
 const PORT = process.env.PORT || 3000;
+
 const app = express();
+
 app.use(cors({
-  origin: 'https://timchwai-app.vercel.app'
+  origin: ['http://localhost:3002', 'https://timchwai-app.vercel.app'],
+  credentials: true
 }));
 app.use(express.json());
 
