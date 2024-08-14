@@ -18,29 +18,29 @@ app.get('/', (req, res) => {
 
 
 // Leagues
-app.get('/api/leagues', LeagueController.getLeagues);
+app.get('/leagues', LeagueController.getLeagues);
 
-app.get('/api/leagues_with_seasons', LeagueController.getLeaguesWithSeasons);
+app.get('/leagues_with_seasons', LeagueController.getLeaguesWithSeasons);
 
-app.get('/api/league_seasons', LeagueController.getLeagueSeasons);
+app.get('/league_seasons', LeagueController.getLeagueSeasons);
 
 
 // Teams
-app.get('/api/teams', TeamController.getTeams);
+app.get('/teams', TeamController.getTeams);
 
-app.get('/api/teams_in_seasons', TeamController.getTeamsInLeagueSeasons);
+app.get('/teams_in_seasons', TeamController.getTeamsInLeagueSeasons);
 
 
 // Players
-app.get('/api/players', PlayerController.getAllPlayers);
+app.get('/players', PlayerController.getAllPlayers);
 
-app.get('/api/player', PlayerController.getPlayerById);
+app.get('/player', PlayerController.getPlayerById);
 
-app.get('/api/random_player', PlayerController.getRandomPlayer);
+app.get('/random_player', PlayerController.getRandomPlayer);
 
-app.get('/api/player_in_team_seasons', PlayerController.getPlayerInTeamSeasons);
+app.get('/player_in_team_seasons', PlayerController.getPlayerInTeamSeasons);
 
-app.get('/api/random_euros_2024', PlayerController.getPlayerInEuros2024);
+app.get('/random_euros_2024', PlayerController.getPlayerInEuros2024);
 
 
 if (process.env.NODE_ENV !== 'test') {

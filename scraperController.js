@@ -25,7 +25,8 @@ async function createLeagueMain(link, name){
     const currentYear = new Date().getFullYear();
     const numberOfYears = 1;
 
-    const seasons = Array.from({ length: numberOfYears }, (v, i) => (currentYear-1) - i);
+    const seasons = [2021, 2022, 2023];
+    // const seasons = Array.from({ length: numberOfYears }, (v, i) => (currentYear-1) - i);
     
     for (const season of seasons){
         await createTeamsAndTeamSeasonsForLeague(name, season);

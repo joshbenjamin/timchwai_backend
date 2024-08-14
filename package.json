@@ -26,6 +26,7 @@
     "node-fetch": "^3.3.2",
     "pg": "^8.10.0",
     "pg-hstore": "^2.3.4",
+    "pm2": "^5.4.2",
     "sequelize": "^6.31.0",
     "supertest": "^6.3.3",
     "winston": "^3.8.2"
