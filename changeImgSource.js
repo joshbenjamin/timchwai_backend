@@ -2,9 +2,9 @@
 const fs = require('fs');
 const path = require('path');
 const util = require('util');
-const { Player, Team, League } = require('../models');
+const { Player, Team, League } = require('./models');
 const streamPipeline = util.promisify(require('stream').pipeline);
-const logger = require('../logger');
+const logger = require('./logger');
 const { Op } = require('sequelize');
 
 require('dotenv').config();
