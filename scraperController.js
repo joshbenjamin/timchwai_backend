@@ -23,10 +23,10 @@ const {
     await createLeagueSeasons(name);
 
     const currentYear = new Date().getFullYear();
-    const numberOfYears = 20;
+    const numberOfYears = 1;
 
     // Create an array of the last 20 years
-    const seasons = Array.from({ length: numberOfYears }, (v, i) => (currentYear-1) - i);
+    const seasons = Array.from({ length: numberOfYears }, (v, i) => (currentYear-(count*numberOfYears)-1) - i);
 
     // Process each season in parallel
     await Promise.all(seasons.map(async (season) => {
@@ -92,6 +92,12 @@ const argv = yargs(hideBin(process.argv))
   .option('internationalName', {
     description: 'Specify the international name (for international functions)',
     type: 'string',
+  })
+  .option('count', {
+    alias: 'c',
+    description: 'Specify the count for season calculation',
+    type: 'number',
+    demandOption: true,
   })
   .help()
   .alias('help', 'h')
