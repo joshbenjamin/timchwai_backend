@@ -59,14 +59,14 @@ const {
   async function players(){
     // await processEuro2024Players();
     await processPlayers();
-    await correctPlayerNameWikiDuplicates();
-    await deleteDuplicatePlayers();
+    // await correctPlayerNameWikiDuplicates();
+    // await deleteDuplicatePlayers();
   }
 
   async function teams(){
     await processTeamData();
-    await syncAltTeamImageToParentImage();
-    await setNullTeamImages();
+    // await syncAltTeamImageToParentImage();
+    // await setNullTeamImages();
   }
 
 
@@ -98,7 +98,6 @@ const argv = yargs(hideBin(process.argv))
     alias: 'c',
     description: 'Specify the count for season calculation',
     type: 'number',
-    demandOption: true,
   })
   .help()
   .alias('help', 'h')

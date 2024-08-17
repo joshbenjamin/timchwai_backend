@@ -502,7 +502,8 @@ async function processTeamSeasons(leagueName, year){
 
     teamSeasons.forEach(async (teamSeason) => {
 
-      if(teamSeason.wiki_link === "2008–09_Portsmouth_F.C._season"){
+      if(teamSeason.wiki_link === "2008–09_Portsmouth_F.C._season" ||
+        teamSeason.wiki_link === "2013–14_Parma_Calcio_1913_season"){
         logger.info("Skipping teamSeason: %s", teamSeason.wiki_link);
         return;
       }
