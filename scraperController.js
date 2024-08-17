@@ -22,6 +22,7 @@ const {
     await createLeague(link);
     await createLeagueSeasons(name);
 
+    const count = argv.count;
     const currentYear = new Date().getFullYear();
     const numberOfYears = 1;
 
