@@ -138,7 +138,7 @@ async function createLeagueSeasons(leagueName) {
     } else {
       console.log('Seasons list not found, creating default seasons');
       var currentYear = new Date().getFullYear()
-      let numberOfSeasons = 10;
+      let numberOfSeasons = 20;
       for (let i = 0; i < numberOfSeasons; i++) {
         let startYear = currentYear-i-1;
         let endYear = currentYear-i;

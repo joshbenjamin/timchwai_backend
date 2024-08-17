@@ -9,8 +9,6 @@ function get_db() {
     DB_URL = `${env.DB_DIALECT}://${env.DB_USERNAME}:${env.DB_PASSWORD}@${env.DB_HOST}:${env.DB_PORT}/${env.DB_NAME}`;
   }
   
-  console.log('DB_URL:', DB_URL);
-
   const useSSL = env.DB_SSL === 'true';
   
   const config = {

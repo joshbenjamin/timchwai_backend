@@ -23,7 +23,7 @@ async function fetchWikiResponse(wikiLink, delay = 300) {
   } catch (error) {
     logger.info(`Error while trying to get response from ${url}, trying again but replacing fullstops`);
 
-    let modifiedUrl = url.replace(/\./g, '');
+    let modifiedUrl = url.replace(/(\/wiki\/.*)\./g, (match) => match.replace(/\./g, ''));
 
     try {
       const response = await axios.get(modifiedUrl);
