@@ -501,6 +501,12 @@ async function processTeamSeasons(leagueName, year){
     let playersAdded = 0;
 
     teamSeasons.forEach(async (teamSeason) => {
+
+      if(teamSeason.wiki_link === "2008–09_Portsmouth_F.C._season"){
+        logger.info("Skipping teamSeason: %s", teamSeason.wiki_link);
+        return;
+      }
+
       logger.info(`Fetching team season for: ${teamSeason.Team.name}`);
 
       let teamPlayers = [];
