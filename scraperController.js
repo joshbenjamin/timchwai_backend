@@ -15,6 +15,7 @@ const {
     syncAltTeamImageToParentImage,
     deleteDuplicatePlayers, 
     setNullTeamImages,
+    addBaseWikiPlayer,
 } = require("./scraper/scraper");
 
   async function league(name) {
@@ -65,6 +66,12 @@ const {
     // await setNullTeamImages();
   }
 
+  async function addPlayer() {
+    const link = argv.playerLink;
+    console.info(`Adding player at link: ${link}`);
+    addBaseWikiPlayer(link);
+  }
+
 
 
 const yargs = require('yargs/yargs');
@@ -75,7 +82,7 @@ const argv = yargs(hideBin(process.argv))
   .option('func', {
     alias: 'f',
     description: 'Specify which function to execute',
-    choices: ['league', 'internationalLeague', 'players', 'teams'],
+    choices: ['league', 'internationalLeague', 'players', 'teams', 'addPlayer'],
     demandOption: true,
   })
   .option('leagueName', {
@@ -86,6 +93,11 @@ const argv = yargs(hideBin(process.argv))
   .option('internationalName', {
     alias: 'iN',
     description: 'Specify the international name (for international functions)',
+    type: 'string',
+  })
+  .option('playerLink', {
+    alias: 'pL',
+    description: 'Specify the player\'s wikipedia link)',
     type: 'string',
   })
   .option('count', {
@@ -121,7 +133,15 @@ const argv = yargs(hideBin(process.argv))
     } else if (argv.func === 'teams') {
       await teams();
       console.log('Processing all teams completed successfully');
-    } else {
+    } else if (argv.func == 'addPlayer') {
+      if(!argv.playerLink){
+        console.error('playerLink must be specified for player');
+        process.exit(1);
+      }
+      await addPlayer();
+      console.log('Player added successfully');
+    }
+    else {
       console.error('Unknown function specified.');
       process.exit(1);
     }

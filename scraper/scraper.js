@@ -1608,6 +1608,17 @@ async function deleteDuplicatePlayers(){
   }
 }
 
+async function addBaseWikiPlayer(link){
+  const name = link.replace('_', ' ');
+  const [player, created_player] = await Player.findOrCreate({
+    where: { name: name, wiki_link: link },
+  });
+
+  if (created_player){
+      logger.info(`Player: ${player.name} created`)
+  }
+}
+
 module.exports = {
   createLeague, 
   createInternationalLeague, 
@@ -1624,5 +1635,6 @@ module.exports = {
   correctPlayerNameWikiDuplicates, 
   syncAltTeamImageToParentImage, 
   deleteDuplicatePlayers,
-  setNullTeamImages
+  setNullTeamImages,
+  addBaseWikiPlayer
 };
