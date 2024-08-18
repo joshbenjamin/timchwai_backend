@@ -47,11 +47,8 @@ const {
     const tournamentYearGap = 4;
     const tourney = currentYear - (tournamentYearGap * count);
 
-    // Process each tournament year in parallel
-    await Promise.all(tournaments.map(async (tourney) => {
-        await createInternationalTeamsAndTeamSeasonsForLeague(name, tourney);
-        await processInternationalTournaments(name, tourney);
-    }));
+    await createInternationalTeamsAndTeamSeasonsForLeague(name, tourney);
+    await processInternationalTournaments(name, tourney);
 }
 
 
