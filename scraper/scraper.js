@@ -59,9 +59,9 @@ async function createInternationalLeague(leagueLink) {
     // const leagueCountry = $('th.infobox-label:contains("Country")').next().find('a').first().text();
     // const leagueNumTeams = parseInt($('th.infobox-label:contains("Number of teams")').next().find('a').first().text(), 10);
     // const leagueLevel = parseInt($('th.infobox-label:contains("Level on pyramid")').next().find('a').first().text(), 10);
-    if(leagueName == "UEFA European Championship"){
-      leagueName = "Euros";
-    }
+    // if(leagueName == "UEFA European Championship"){
+    //   leagueName = "Euros";
+    // }
 
     const imgElement = $('td.infobox-image img');
 
@@ -952,7 +952,7 @@ async function processEuro2024Players(){
   League.associate(models);
 
   const league = await League.findOne({
-    where: { name: "Euros" },
+    where: { name: "UEFA European Championship" },
   });
 
   if (!league) {

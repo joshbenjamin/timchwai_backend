@@ -332,11 +332,11 @@ exports.getPlayerInEuros2024 = async (req, res) => {
   Career.associate(models);
 
   const league = await League.findOne({
-    where: { name: "Euros" },
+    where: { name: "UEFA European Championship" },
   });
 
   if (!league) {
-    throw new Error(`League not found with name: Euros`);
+    throw new Error(`League not found with name: UEFA European Championship`);
     return;
   }
   else{
