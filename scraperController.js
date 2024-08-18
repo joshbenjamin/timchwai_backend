@@ -41,12 +41,11 @@ const {
     await createInternationalLeague(link);
     await createInternationalLeagueSeasons(name);
 
-    const currentYear = new Date().getFullYear();
-    const numberOfTournaments = 4;  // You can increase this number to handle more tournaments
+    const currentYear = 2024;  // By default, just start at 2024
+    // const numberOfTournaments = 4;  // You can increase this number to handle more tournaments
+    const count = argv.count;
     const tournamentYearGap = 4;
-
-    // Create an array of tournament years based on the gap
-    const tournaments = Array.from({ length: numberOfTournaments }, (v, i) => currentYear - (tournamentYearGap * i));
+    const tourney = currentYear - (tournamentYearGap * count);
 
     // Process each tournament year in parallel
     await Promise.all(tournaments.map(async (tourney) => {
