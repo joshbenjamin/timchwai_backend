@@ -508,7 +508,7 @@ async function processTeamSeasons(leagueName, year){
         teamSeason.wiki_link === "2013–14_Hannover_96_season" ||
         teamSeason.wiki_link === "2013–14_FC_Nantes_season"){
         logger.info("Skipping teamSeason: %s", teamSeason.wiki_link);
-        break;
+        return;
       }
 
       logger.info(`Fetching team season for: ${teamSeason.Team.name}`);
@@ -544,7 +544,7 @@ async function processTeamSeasons(leagueName, year){
         if (!playerTable){
           // Example: https://en.wikipedia.org/wiki/2013%E2%80%9314_SC_Freiburg_season (there just isn't a squad list)
           logger.error(`Can't find player table for, skipping: ${teamSeason.Team.name} in ${teamSeason.wiki_link}`);
-          break;
+          return;
         }
 
         if (playerTable.length) {
