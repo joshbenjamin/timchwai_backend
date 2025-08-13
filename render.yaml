@@ -1,0 +1,24 @@
+# Exported from Render on 2025-08-13T21:34:02Z
+services:
+- type: web
+  name: Timchwai Backend
+  runtime: node
+  repo: https://github.com/joshbenjamin/timchwai_backend
+  plan: starter
+  envVars:
+  - key: DB_USERNAME
+    sync: false
+  - key: DB_PASSWORD
+    sync: false
+  - key: DB_HOST
+    sync: false
+  - key: DB_DIALECT
+    sync: false
+  - key: DB_DATABASE
+    sync: false
+  region: frankfurt
+  buildCommand: yarn
+  startCommand: node app.js
+  healthCheckPath: /
+  autoDeployTrigger: commit
+version: "1"
