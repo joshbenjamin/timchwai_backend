@@ -85,7 +85,8 @@ case "$cmd" in
            label="$1"; shift; start "$label" run "$@" ;;
   _job)    job "$@" ;;
   list)    for f in $(ls -1t "$DIR"/*.status 2>/dev/null); do id="$(basename "$f" .status)"; printf '%-40s %s\n' "$id" "$(state "$id")"; done ;;
-  status)  id="$(resolve "${1:-}")"; echo "$id: $(state "$id")"; grep -E "START|END|finished" "$DIR/$id.log" 2>/dev/null | tail -20 ;;
+  status)  id="$(resolve "${1:-}")"; echo "$id: $(state "$id")"; grep -E "START|END|finished" "$DIR/$id.log" 2>/dev/null | tail -20
+           echo "progress: $(grep -E "Refreshed [0-9]+ of|Processing player [0-9]+ of" "$DIR/$id.log" 2>/dev/null | tail -1)" ;;
   tail)    id="$(resolve "${1:-}")"; touch "$DIR/$id.log"; tail -n 40 -f "$DIR/$id.log" ;;
   errors)  id="$(resolve "${1:-}")"; grep -n -i -E "error|failed|not found" "$DIR/$id.log" | tail -50 ;;
   stop)    id="$(resolve "${1:-}")"; pid="$(cat "$DIR/$id.pid" 2>/dev/null)"
