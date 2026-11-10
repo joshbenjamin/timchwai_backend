@@ -1,5 +1,12 @@
 const axios = require('axios');
 const logger = require('../logger');
+require('dotenv').config();
+
+// Wikimedia returns 403 for the default axios User-Agent (and for requests with none), and its
+// policy asks scrapers to identify themselves. Override with WIKI_USER_AGENT in .env, ideally
+// adding a contact URL or email, e.g. "my-scraper/1.0 (you@example.com)".
+const USER_AGENT = process.env.WIKI_USER_AGENT || 'career-history-scraper/1.0';
+const wikiClient = axios.create({ headers: { 'User-Agent': USER_AGENT } });
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -10,7 +17,7 @@ async function fetchWikiResponse(wikiLink, delay = 300) {
 
   logger.info(`URL: ${url}`);
   try {
-    const response = await axios.get(url);
+    const response = await wikiClient.get(url);
     if (response){
       let date = new Date();
       logger.info(`Response received for ${url} at ${date.toUTCString()}`);
@@ -26,7 +33,7 @@ async function fetchWikiResponse(wikiLink, delay = 300) {
     let modifiedUrl = url.replace(/(\/wiki\/.*)\./g, (match) => match.replace(/\./g, ''));
 
     try {
-      const response = await axios.get(modifiedUrl);
+      const response = await wikiClient.get(modifiedUrl);
       if (response){
         let date = new Date();
         logger.info(`Response received for modified ${modifiedUrl} at ${date.toUTCString()}`);
@@ -46,7 +53,7 @@ async function fetchWikiResponse(wikiLink, delay = 300) {
 async function fetchWikiImage(url, delay = 500) {
   logger.info(`URL: ${url}`);
   try {
-    const response = await axios.get(url);
+    const response = await wikiClient.get(url);
     if (response){
       let date = new Date();
       logger.info(`Response received for ${url} at ${date.toUTCString()}`);

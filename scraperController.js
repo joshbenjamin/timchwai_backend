@@ -9,6 +9,7 @@ const {
     processTeamSeasons,
     processTeamData, 
     processPlayers,
+    refreshPlayers,
     processEuro2024Players,
     correctPlayerNameWikiDuplicates, 
     processInternationalTournaments,
@@ -82,7 +83,7 @@ const argv = yargs(hideBin(process.argv))
   .option('func', {
     alias: 'f',
     description: 'Specify which function to execute',
-    choices: ['league', 'internationalLeague', 'players', 'teams', 'addPlayer'],
+    choices: ['league', 'internationalLeague', 'players', 'teams', 'addPlayer', 'refreshPlayers'],
     demandOption: true,
   })
   .option('leagueName', {
@@ -98,6 +99,15 @@ const argv = yargs(hideBin(process.argv))
   .option('playerLink', {
     alias: 'pL',
     description: 'Specify the player\'s wikipedia link)',
+    type: 'string',
+  })
+  .option('limit', {
+    description: 'refreshPlayers: how many players to refresh (least recently updated first)',
+    type: 'number',
+    default: 50,
+  })
+  .option('name', {
+    description: 'refreshPlayers: only players whose name contains this text',
     type: 'string',
   })
   .option('count', {
@@ -130,6 +140,9 @@ const argv = yargs(hideBin(process.argv))
     } else if (argv.func === 'players') {
       await players();
       console.log('Processing all players completed successfully');
+    } else if (argv.func === 'refreshPlayers') {
+      await refreshPlayers({ limit: argv.limit, name: argv.name });
+      console.log('Refreshing players completed');
     } else if (argv.func === 'teams') {
       await teams();
       console.log('Processing all teams completed successfully');

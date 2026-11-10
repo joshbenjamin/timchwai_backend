@@ -4,6 +4,7 @@ const express = require('express');
 const PlayerController = require('./models/controllers/PlayerController');
 const LeagueController = require('./models/controllers/LeagueController');
 const TeamController = require('./models/controllers/TeamController');
+const SyncController = require('./models/controllers/SyncController');
 
 require('dotenv').config();
 
@@ -20,6 +21,10 @@ app.use(express.json());
 app.get('/', (req, res) => {
   res.send('Welcome to TIMCHWAI backend!');
 });
+
+
+// Data freshness
+app.get('/last_sync', SyncController.getLastSync);
 
 
 // Leagues

@@ -1010,7 +1010,9 @@ async function processEuro2024Players(){
 
 }
 
-async function processPlayer(player){
+// refresh=true: re-scrape an already-processed player. Existing values are kept when the
+// page yields nothing (and the image is never replaced, it may already be on Cloudinary).
+async function processPlayer(player, { refresh = false } = {}){
   if (player){
     logger.info(`Found ${player.name}`);
   } else {
@@ -1030,7 +1032,7 @@ async function processPlayer(player){
 
   const response = await fetchWikiResponse(player.wiki_link);
 
-  if (response.status === 200){
+  if (response && response.status === 200){
     const $ = cheerio.load(response.data);
     const infobox = $('table.infobox.vcard:not([class*=" "])');
 
@@ -1109,15 +1111,26 @@ async function processPlayer(player){
       birth_place: birthPlace,
     }
 
-    Player.update(playerInfo, {
-      where: {
-        id: player.id
+    if (refresh) {
+      delete playerInfo.image;
+      delete playerInfo.name_basic;
+      for (const key of Object.keys(playerInfo)) {
+        const v = playerInfo[key];
+        const empty = v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
+        if (empty) delete playerInfo[key];
       }
-    }).then((result) => {
+    }
+
+    try {
+      await Player.update(playerInfo, {
+        where: {
+          id: player.id
+        }
+      });
       logger.info(`Player updated: ${player.name}`);
-    }).catch((error) => {
+    } catch (error) {
       logger.error(`Player not updated: ${player.name}\n${error}`);
-    });
+    }
 
     const tableRows = $('table.infobox tbody tr:not(:has(table.infobox-subbox))');
     let currentType = '';
@@ -1608,6 +1621,32 @@ async function deleteDuplicatePlayers(){
   }
 }
 
+// Re-scrape existing players (careers, apps, goals, bio), least recently updated first.
+// Safe to re-run: careers are findOrCreate + update, and existing values/images are preserved.
+async function refreshPlayers({ limit = 50, name = null } = {}) {
+  const where = { name_basic: { [Op.ne]: null }, wiki_link: { [Op.ne]: null } };
+  if (name) {
+    where.name = { [Op.iLike]: `%${name}%` };
+  }
+
+  const players = await Player.findAll({ where, order: [['updatedAt', 'ASC']], limit });
+  logger.info(`Refreshing ${players.length} players`);
+
+  let ok = 0;
+  let failed = 0;
+  for (let i = 0; i < players.length; i++) {
+    try {
+      await processPlayer(players[i], { refresh: true });
+      ok++;
+    } catch (error) {
+      failed++;
+      logger.error(`Refresh failed for ${players[i].name}: ${error.message}`);
+    }
+    logger.info(`Refreshed ${i + 1} of ${players.length} (${failed} failed)`);
+  }
+  logger.info(`Refresh done: ${ok} processed, ${failed} failed`);
+}
+
 async function addBaseWikiPlayer(link){
   const name = link.replace('_', ' ');
   const [player, created_player] = await Player.findOrCreate({
@@ -1632,6 +1671,7 @@ module.exports = {
   processPlayers, 
   processEuro2024Players,
   processPlayer, 
+  refreshPlayers,
   correctPlayerNameWikiDuplicates, 
   syncAltTeamImageToParentImage, 
   deleteDuplicatePlayers,

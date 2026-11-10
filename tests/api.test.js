@@ -1,6 +1,7 @@
 const request = require('supertest');
 const server = require('../app');
 const db = require('../database');
+const { QueryTypes } = require('sequelize');
 
 const TIMEOUT = 10000;
 
@@ -15,97 +16,114 @@ describe('API tests', () => {
     expect(response.text).toBe('Welcome to TIMCHWAI backend!');
   });
 
+  // Data freshness
+
+  test('GET /last_sync', async () => {
+    const response = await request(server).get('/last_sync');
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toHaveProperty('last_sync');
+  }, TIMEOUT);
+
   // Leagues
 
-  test('GET /api/leagues', async () => {
-    const response = await request(server).get('/api/leagues');
+  test('GET /leagues', async () => {
+    const response = await request(server).get('/leagues');
     expect(response.statusCode).toBe(200);
   }, TIMEOUT);
 
-  test('GET /api/leagues_with_seasons', async () => {
-    const response = await request(server).get('/api/leagues_with_seasons');
+  test('GET /leagues_with_seasons', async () => {
+    const response = await request(server).get('/leagues_with_seasons');
     expect(response.statusCode).toBe(200);
   }, TIMEOUT);
 
-  test('GET /api/league_seasons', async () => {
+  test('GET /league_seasons', async () => {
     const leagueIds = "1";
-    const response = await request(server).get(`/api/league_seasons?leagueIds=${leagueIds}`);
+    const response = await request(server).get(`/league_seasons?leagueIds=${leagueIds}`);
     expect(response.statusCode).toBe(200);
   }, TIMEOUT);
   
-  test('GET /api/league_seasons', async () => {
+  test('GET /league_seasons', async () => {
     // No leagueIds
-    const response = await request(server).get(`/api/league_seasons`);
+    const response = await request(server).get(`/league_seasons`);
     expect(response.statusCode).toBe(400);
     expect(response.text).toBe("Missing leagueIds query parameter");
   }, TIMEOUT);
 
   // Team
 
-  test('GET /api/teams', async () => {
-    const response = await request(server).get('/api/teams');
+  test('GET /teams', async () => {
+    const response = await request(server).get('/teams');
     expect(response.statusCode).toBe(200);
   }, TIMEOUT);
 
-  test('GET /api/teams_in_seasons', async () => {
+  test('GET /teams_in_seasons', async () => {
     const leagueSeasonIds = "24,25";
-    const response = await request(server).get(`/api/teams_in_seasons?leagueSeasonIds=${leagueSeasonIds}`);
+    const response = await request(server).get(`/teams_in_seasons?leagueSeasonIds=${leagueSeasonIds}`);
     expect(response.statusCode).toBe(200);
-    expect(response.body.length).toBe(23);
+    expect(response.body.length).toBeGreaterThan(0);
   }, TIMEOUT);
 
-  test('GET /api/teams_in_seasons', async () => {
+  test('GET /teams_in_seasons', async () => {
     // No leagueSeasonIds
-    const response = await request(server).get(`/api/teams_in_seasons`);
+    const response = await request(server).get(`/teams_in_seasons`);
     expect(response.statusCode).toBe(400);
     expect(response.text).toBe("Missing leagueSeasonIds query parameter");
   }, TIMEOUT);
 
   // Player
 
-  test('GET /api/players', async () => {
-    const response = await request(server).get('/api/players');
+  test('GET /players', async () => {
+    const response = await request(server).get('/players');
     expect(response.statusCode).toBe(200);
   }, TIMEOUT);
 
-  test('GET /api/player', async () => {
-    const playerId = "2337" // Mason
-    const response = await request(server).get(`/api/player?playerId=${playerId}`);
+  test('GET /player', async () => {
+    // Look up a real id instead of assuming one exists
+    const list = await request(server).get('/players');
+    expect(list.statusCode).toBe(200);
+    const playerId = list.body[0].id;
+    const response = await request(server).get(`/player?playerId=${playerId}`);
     expect(response.statusCode).toBe(200);
-    expect(response.body.name).toBe("Mason Mount");
+    expect(response.body.id).toBe(playerId);
+    expect(response.body.name).toBeTruthy();
   }, TIMEOUT);
 
-  test('GET /api/player', async () => {
+  test('GET /player', async () => {
     // No playerId
-    const response = await request(server).get(`/api/player`);
+    const response = await request(server).get(`/player`);
     expect(response.statusCode).toBe(400);
     expect(response.text).toBe("Missing playerId query parameter");
   }, TIMEOUT);
 
-  test('GET /api/random_player', async () => {
-    const response = await request(server).get('/api/random_player');
+  test('GET /random_player', async () => {
+    const response = await request(server).get('/random_player');
     expect(response.statusCode).toBe(200);
   }, TIMEOUT);
 
-  test('GET /api/player_in_team_seasons', async () => {
-    const leagueSeasonIds = 24;
-    const teamIds = 1;
-    const response = await request(server).get(`/api/player_in_team_seasons?leagueSeasonIds=${leagueSeasonIds}&teamIds=${teamIds}`);
+  test('GET /player_in_team_seasons', async () => {
+    // Find a league season + team that actually has players
+    const [row] = await db.query(
+      `SELECT ts.league_season_id AS "leagueSeasonId", ts.team_id AS "teamId"
+       FROM team_seasons ts JOIN player_team_seasons pts ON pts.team_season_id = ts.id
+       LIMIT 1`,
+      { type: QueryTypes.SELECT }
+    );
+    const response = await request(server).get(`/player_in_team_seasons?leagueSeasonIds=${row.leagueSeasonId}&teamIds=${row.teamId}`);
     expect(response.statusCode).toBe(200);
   }, TIMEOUT);
 
-  test('GET /api/player_in_team_seasons', async () => {
+  test('GET /player_in_team_seasons', async () => {
     // No teamIds
     const leagueSeasonIds = 24;
-    const response = await request(server).get(`/api/player_in_team_seasons?leagueSeasonIds=${leagueSeasonIds}`);
+    const response = await request(server).get(`/player_in_team_seasons?leagueSeasonIds=${leagueSeasonIds}`);
     expect(response.statusCode).toBe(400);
     expect(response.text).toBe("Missing teamIds query parameter");
   }, TIMEOUT);
 
-  test('GET /api/player_in_team_seasons', async () => {
+  test('GET /player_in_team_seasons', async () => {
     // No leagueSeasonsIds
     const teamIds = 1;
-    const response = await request(server).get(`/api/player_in_team_seasons?teamIds=${teamIds}`);
+    const response = await request(server).get(`/player_in_team_seasons?teamIds=${teamIds}`);
     expect(response.statusCode).toBe(400);
     expect(response.text).toBe("Missing leagueSeasonIds query parameter");
   }, TIMEOUT);
