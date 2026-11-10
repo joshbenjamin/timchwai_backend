@@ -14,6 +14,25 @@ const db = require('../database');
 
 const ASK_Q = true;
 
+// The season that is current right now, as its start year. Seasons start around July/August,
+// so from July onwards the current season began this calendar year, otherwise last year.
+function currentSeasonStartYear(now = new Date()) {
+  return now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+}
+
+// Newest season (start year) of a league that already has teams loaded, or null.
+async function latestProcessedSeason(leagueName) {
+  const [row] = await db.query(
+    `SELECT MAX(ls.from_year) AS y
+     FROM league_seasons ls
+     JOIN leagues l ON l.id = ls.league_id
+     JOIN team_seasons ts ON ts.league_season_id = ls.id
+     WHERE l.name = :name`,
+    { replacements: { name: leagueName }, type: QueryTypes.SELECT }
+  );
+  return row && row.y !== null ? Number(row.y) : null;
+}
+
 async function createLeague(leagueLink) {
   try {
     const response = await fetchWikiResponse(leagueLink);
@@ -99,7 +118,7 @@ async function createInternationalLeague(leagueLink) {
 
 async function createLeagueSeasons(leagueName) {
   try {
-    const league = await League.findOne({
+    const league = await League.findOne({ order: [['id', 'ASC']],
         where: {
             name: leagueName,
         },
@@ -137,11 +156,11 @@ async function createLeagueSeasons(leagueName) {
       // );
     } else {
       console.log('Seasons list not found, creating default seasons');
-      var currentYear = new Date().getFullYear()
       let numberOfSeasons = 20;
+      const latestStart = currentSeasonStartYear();
       for (let i = 0; i < numberOfSeasons; i++) {
-        let startYear = currentYear-i-1;
-        let endYear = currentYear-i;
+        let startYear = latestStart-i;
+        let endYear = startYear+1;
         let link = `${startYear}-${String(endYear%100).padStart(2, '0')}_${league.wiki_link}`
         seasons.push({
           from_year: startYear,
@@ -175,7 +194,7 @@ async function createLeagueSeasons(leagueName) {
 
 async function createInternationalLeagueSeasons(leagueName) {
   try {
-    const league = await League.findOne({
+    const league = await League.findOne({ order: [['id', 'ASC']],
         where: {
             name: leagueName,
         },
@@ -240,7 +259,7 @@ async function createTeamsAndTeamSeasonsForLeague(leagueName, startYear) {
 
     try {
       // Find the league and leagueSeason
-      const league = await League.findOne({
+      const league = await League.findOne({ order: [['id', 'ASC']],
         where: { name: leagueName },
       });
   
@@ -364,7 +383,7 @@ async function createTeamsAndTeamSeasonsForLeague(leagueName, startYear) {
 
     try {
       // Find the league and leagueSeason
-      const league = await League.findOne({
+      const league = await League.findOne({ order: [['id', 'ASC']],
         where: { name: leagueName },
       });
   
@@ -454,7 +473,7 @@ async function createTeamsAndTeamSeasonsForLeague(leagueName, startYear) {
 
 async function processTeamSeasons(leagueName, year){  
   try {
-    const league = await League.findOne({
+    const league = await League.findOne({ order: [['id', 'ASC']],
       where: {
         name: leagueName
       }
@@ -653,7 +672,7 @@ async function processTeamSeasons(leagueName, year){
 
 const processInternationalTournaments = async (leagueName, year) => {
   try {
-    const league = await League.findOne({
+    const league = await League.findOne({ order: [['id', 'ASC']],
       where: { name: leagueName }
     });
 
@@ -951,7 +970,7 @@ async function processEuro2024Players(){
   LeagueSeason.associate(models);
   League.associate(models);
 
-  const league = await League.findOne({
+  const league = await League.findOne({ order: [['id', 'ASC']],
     where: { name: "UEFA European Championship" },
   });
 
@@ -1112,7 +1131,7 @@ async function processPlayer(player, { refresh = false } = {}){
     }
 
     if (refresh) {
-      delete playerInfo.image;
+      if (player.image) delete playerInfo.image; // keep existing (Cloudinary) image, but fill a missing one
       delete playerInfo.name_basic;
       for (const key of Object.keys(playerInfo)) {
         const v = playerInfo[key];
@@ -1659,6 +1678,8 @@ async function addBaseWikiPlayer(link){
 }
 
 module.exports = {
+  currentSeasonStartYear,
+  latestProcessedSeason,
   createLeague, 
   createInternationalLeague, 
   createLeagueSeasons, 

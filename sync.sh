@@ -2,7 +2,10 @@
 # Run scraper jobs in the background, with a log and status per job.
 # Jobs survive closing your SSH session. Run from the backend directory.
 #
-#   ./sync.sh season "Premier League" "La Liga"   current season for each league, then new players
+#   ./sync.sh season "Premier League" "La Liga"   catch up each league (every season since the newest one loaded,
+#                                                 through the current season), then load new players
+#   ./sync.sh season --season 2024 "La Liga"       only one season (2024 = 2024/25)
+#   ./sync.sh season --from 2022 --to 2024 "La Liga"   a range (--to defaults to the current season)
 #   ./sync.sh refresh [limit]                      refresh existing players' careers (default 50)
 #   ./sync.sh run <label> <scraperController args> any other scraper call, e.g. run teams -f teams
 #   ./sync.sh list                                 all jobs and their state
@@ -50,8 +53,10 @@ job() { # internal: runs inside the detached process
   echo running > "$DIR/$id.status"
   case "$kind" in
     season)
+      local extra=()
+      while [[ "${1:-}" == --* ]]; do extra+=("$1" "$2"); shift 2; done
       for league in "$@"; do
-        step "$log" "league '$league' (current season)" $SCRAPER_CMD -f league --leagueName "$league" --count 0 || rc=1
+        step "$log" "league '$league' ${extra[*]:-catch-up}" $SCRAPER_CMD -f league --leagueName "$league" ${extra[@]+"${extra[@]}"} || rc=1
       done
       step "$log" "new players" $SCRAPER_CMD -f players || rc=1
       ;;
@@ -78,7 +83,7 @@ start() { # start <label> <kind> <args...>
 
 cmd="${1:-help}"; [ $# -gt 0 ] && shift
 case "$cmd" in
-  season)  [ $# -ge 1 ] || { echo 'Usage: ./sync.sh season "League Name" ["Another League" ...]'; exit 1; }
+  season)  [ $# -ge 1 ] || { echo 'Usage: ./sync.sh season [--season Y | --from Y [--to Z]] "League Name" ["Another League" ...]'; exit 1; }
            start season season "$@" ;;
   refresh) start refresh refresh "${1:-50}" ;;
   run)     [ $# -ge 2 ] || { echo "Usage: ./sync.sh run <label> <scraperController args>"; exit 1; }

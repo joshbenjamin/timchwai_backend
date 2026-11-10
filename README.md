@@ -96,7 +96,7 @@ Backup of production: `sudo -u postgres pg_dump -Fc timchwai_db > /root/backups/
 - `create_international_league.sh`: same for `-f internationalLeague --internationalName "UEFA European Championship"`.
 - `-f refreshPlayers [--limit 50] [--name "Salah"]`: re-scrapes **existing** players (careers, apps, goals, bio), least recently updated first. Idempotent: careers are `findOrCreate` + update, existing values are kept when Wikipedia yields nothing, and `image` is never replaced (images were migrated to Cloudinary). Run it in batches.
 - `-f players`: processes only *new* players (`name_basic` is null); asks for confirmation.
-- Current season: `create_league.sh` loops `--count 1..20`, and `--count 0` is the current season (`currentYear - count - 1`), so run `-f league --leagueName "<League>" --count 0` to add it.
+- `-f league --leagueName "<League>"` chooses seasons by **start year** (2025 = 2025/26): no flag = catch-up (from the newest season that already has teams, re-run, through the current season; the current season is the one that began last July/August); `--season 2024` = one season; `--from 2022 [--to 2025]` = a range. `--count N` is the old calendar-year form and is not needed any more. `create_league.sh` (loops `--count 1..20`) predates this and never reaches the current season.
 - `changeImgSource.js`: image source/Cloudinary migration helper.
 - Logs go to `logs/scraper_<timestamp>.log`. The directory is git-ignored and must exist.
 
@@ -107,7 +107,9 @@ The app header's "Data last updated" date is dynamic: the scraper rewrites a pla
 Run on the droplet from `/root/timchwai_backend`. Jobs are detached, so they survive closing SSH. Each job has a log in `logs/sync/<id>.log` and a state (`running`, `done`, `failed`, `stopped`, `lost`).
 
 ```bash
-./sync.sh season "Premier League" "La Liga"   # current season for each league, then new players
+./sync.sh season "Premier League" "La Liga"   # catch up each league to the current season, then load new players
+./sync.sh season --season 2024 "La Liga"       # one season only (start year)
+./sync.sh season --from 2022 --to 2024 "La Liga"   # a range
 ./sync.sh refresh 100                          # refresh 100 existing players (oldest first)
 ./sync.sh run teams -f teams                   # any other scraper call: run <label> <args>
 ./sync.sh list                                 # all jobs and their state
@@ -116,6 +118,8 @@ Run on the droplet from `/root/timchwai_backend`. Jobs are detached, so they sur
 ./sync.sh errors [id]                          # error / failed lines
 ./sync.sh stop [id]
 ```
+
+Steps keep running a few seconds after they log completion, because the scraper starts work it does not await; this is normal, and the process must not close the DB connection early (that breaks it).
 
 The scraper's own per-process log (`logs/scraper_<timestamp>.log`, from `logger.js`) is also written. `NODE_MEM` (default 2048 MB) caps Node's heap; check `free -m` before raising it.
 
@@ -176,4 +180,6 @@ SSH with a key (`ssh root@134.122.126.172`). The DigitalOcean web console also w
 - Run as a non-root user, and apply pending OS updates (200 pending, 5 security).
 - Add an uptime monitor on `https://api.timchwai.co.za/`.
 - Make `tests/api.test.js` independent of production data (seed or fixtures).
+- `leagues` has empty duplicate rows (ids 7-12: a second Premier League, three Serie A, "LaLiga EA Sports", Bundesliga, Ligue 1). Harmless now (lookups pick the lowest id) but worth deleting once confirmed unreferenced.
+- Known scraper noise: `createLeague` logs `column "nan" does not exist` (infobox layout changed; the league row already exists); players whose image URL exceeds 512 characters are not updated.
 - Document Cloudinary configuration.

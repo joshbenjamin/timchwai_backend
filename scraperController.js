@@ -10,6 +10,8 @@ const {
     processTeamData, 
     processPlayers,
     refreshPlayers,
+    currentSeasonStartYear,
+    latestProcessedSeason,
     processEuro2024Players,
     correctPlayerNameWikiDuplicates, 
     processInternationalTournaments,
@@ -19,23 +21,44 @@ const {
     addBaseWikiPlayer,
 } = require("./scraper/scraper");
 
+  // Which seasons to load, as start years (2025 = 2025/26):
+  //   --count N            legacy: the single season (currentYear - N - 1)
+  //   --season Y           just that season
+  //   --from Y [--to Z]    a range (default --to = the current season)
+  //   (none)               catch-up: from the newest season already loaded through the current one
+  async function seasonsToLoad(name) {
+    const current = currentSeasonStartYear();
+    if (argv.count !== undefined) {
+      return [new Date().getFullYear() - argv.count - 1];
+    }
+    if (argv.season !== undefined) {
+      return [argv.season];
+    }
+    if (argv.from !== undefined || argv.to !== undefined) {
+      const to = argv.to !== undefined ? argv.to : current;
+      const from = argv.from !== undefined ? argv.from : to;
+      if (from > to) throw new Error(`--from (${from}) must not be after --to (${to})`);
+      return Array.from({ length: to - from + 1 }, (_, i) => from + i);
+    }
+    const last = await latestProcessedSeason(name);
+    const from = last === null ? current : last;  // re-run the newest loaded season too: squads change
+    return Array.from({ length: current - from + 1 }, (_, i) => from + i);
+  }
+
   async function league(name) {
     const link = name.replace(' ', '_');
     await createLeague(link);
     await createLeagueSeasons(name);
 
-    const count = argv.count;
-    const currentYear = new Date().getFullYear();
-    const numberOfYears = 1;
+    const seasons = await seasonsToLoad(name);
+    logger.info(`League "${name}": loading seasons ${seasons.join(', ')}`);
 
-    // Create an array of the last 20 years
-    const seasons = Array.from({ length: numberOfYears }, (v, i) => (currentYear-(count*numberOfYears)-1) - i);
-
-    // Process each season in parallel
-    await Promise.all(seasons.map(async (season) => {
+    // One season at a time, to be gentle on Wikipedia
+    for (const season of seasons) {
+        logger.info(`League "${name}": season ${season}/${season + 1}`);
         await createTeamsAndTeamSeasonsForLeague(name, season);
         await processTeamSeasons(name, season);
-    }));
+    }
   }
 
   async function internationalLeague(name) {
@@ -70,7 +93,7 @@ const {
   async function addPlayer() {
     const link = argv.playerLink;
     console.info(`Adding player at link: ${link}`);
-    addBaseWikiPlayer(link);
+    await addBaseWikiPlayer(link);
   }
 
 
@@ -109,6 +132,18 @@ const argv = yargs(hideBin(process.argv))
   .option('name', {
     description: 'refreshPlayers: only players whose name contains this text',
     type: 'string',
+  })
+  .option('season', {
+    description: 'league: load only this season, given as its start year (2025 = 2025/26)',
+    type: 'number',
+  })
+  .option('from', {
+    description: 'league: first season (start year) of a range; --to defaults to the current season',
+    type: 'number',
+  })
+  .option('to', {
+    description: 'league: last season (start year) of a range',
+    type: 'number',
   })
   .option('count', {
     alias: 'c',
