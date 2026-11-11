@@ -13,7 +13,7 @@ function get_db() {
   
   const config = {
     dialect: 'postgres',
-    logging: console.log // or false if you want to disable logging
+    logging: env.DB_LOGGING === 'true' ? console.log : false // SQL logging is very verbose; set DB_LOGGING=true to see it
   };
 
   if (useSSL) {

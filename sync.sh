@@ -15,12 +15,12 @@
 #   ./sync.sh stop [id]                            stop a running job
 #
 # Files: logs/sync/<id>.log (output), <id>.status, <id>.pid. <id> = timestamp-label.
-# Env: NODE_MEM (MB, default 256; the droplet has ~450 MB RAM), SCRAPER_CMD (override for testing).
+# Env: NODE_MEM (MB, default 384; the droplet has ~450 MB RAM), SCRAPER_CMD (override for testing).
 set -u
 cd "$(dirname "$0")"
 
 DIR=logs/sync
-NODE_MEM="${NODE_MEM:-256}"
+NODE_MEM="${NODE_MEM:-384}"
 SCRAPER_CMD="${SCRAPER_CMD:-node --max_old_space_size=$NODE_MEM scraperController.js}"
 mkdir -p "$DIR"
 

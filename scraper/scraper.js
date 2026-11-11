@@ -519,7 +519,9 @@ async function processTeamSeasons(leagueName, year){
 
     let playersAdded = 0;
 
-    teamSeasons.forEach(async (teamSeason) => {
+    // One team at a time (not all in parallel) so memory stays low on a small server
+    for (const teamSeason of teamSeasons) {
+    try {
 
       if(teamSeason.wiki_link === "2008–09_Portsmouth_F.C._season" ||
         teamSeason.wiki_link === "2013–14_Parma_Calcio_1913_season" ||
@@ -527,7 +529,7 @@ async function processTeamSeasons(leagueName, year){
         teamSeason.wiki_link === "2013–14_Hannover_96_season" ||
         teamSeason.wiki_link === "2013–14_FC_Nantes_season"){
         logger.info("Skipping teamSeason: %s", teamSeason.wiki_link);
-        return;
+        continue;
       }
 
       logger.info(`Fetching team season for: ${teamSeason.Team.name}`);
@@ -563,7 +565,7 @@ async function processTeamSeasons(leagueName, year){
         if (!playerTable){
           // Example: https://en.wikipedia.org/wiki/2013%E2%80%9314_SC_Freiburg_season (there just isn't a squad list)
           logger.error(`Can't find player table for, skipping: ${teamSeason.Team.name} in ${teamSeason.wiki_link}`);
-          return;
+          continue;
         }
 
         if (playerTable.length) {
@@ -662,8 +664,10 @@ async function processTeamSeasons(leagueName, year){
       }
 
       logger.info(`Players added for: ${teamSeason.Team.name}\n${teamPlayers}`);
-
-    });
+    } catch (teamError) {
+      logger.error(`Failed processing ${teamSeason.Team ? teamSeason.Team.name : teamSeason.wiki_link}: ${teamError.message}`);
+    }
+    }
 
   } catch (error) {
     logger.error(error);

@@ -44,6 +44,7 @@ The frontend dev server runs on port 3002 and is in the CORS allowlist.
 | `DB_DIALECT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME` | Postgres connection parts. |
 | `DB_SSL` | `'true'` enables SSL with `rejectUnauthorized: false`. |
 | `WIKI_USER_AGENT` | User-Agent for Wikipedia requests (default `career-history-scraper/1.0`). Wikipedia returns **403** to axios's default User-Agent, so the scraper must send one; Wikimedia's policy asks for contact info in it. |
+| `DB_LOGGING` | `'true'` prints every SQL statement (very verbose: it made logs hundreds of MB). Off by default. |
 | `NODE_ENV` | `test` stops `app.js` from calling `listen()` (for jest). |
 
 Cloudinary is a dependency (team/player images, see `changeImgSource.js`); its credentials are not documented here yet.
@@ -121,7 +122,7 @@ Run on the droplet from `/root/timchwai_backend`. Jobs are detached, so they sur
 
 Steps keep running a few seconds after they log completion, because the scraper starts work it does not await; this is normal, and the process must not close the DB connection early (that breaks it).
 
-The scraper's own per-process log (`logs/scraper_<timestamp>.log`, from `logger.js`) is also written. `NODE_MEM` (default 2048 MB) caps Node's heap; check `free -m` before raising it.
+The scraper's own per-process log (`logs/scraper_<timestamp>.log`, from `logger.js`) is also written. `NODE_MEM` (default 384 MB) caps Node's heap. The droplet has only ~450 MB RAM: with a 2048 cap the kernel OOM-killed the scraper (exit 137), and below ~256 Node itself runs out of heap (exit 134). Team pages are processed one at a time to keep memory low. A `--from/--to` range runs one process per season.
 
 The scraper is a manual, offline tool. It is not needed for the API to run.
 
