@@ -15,12 +15,12 @@
 #   ./sync.sh stop [id]                            stop a running job
 #
 # Files: logs/sync/<id>.log (output), <id>.status, <id>.pid. <id> = timestamp-label.
-# Env: NODE_MEM (MB, default 2048), SCRAPER_CMD (override for testing).
+# Env: NODE_MEM (MB, default 256; the droplet has ~450 MB RAM), SCRAPER_CMD (override for testing).
 set -u
 cd "$(dirname "$0")"
 
 DIR=logs/sync
-NODE_MEM="${NODE_MEM:-2048}"
+NODE_MEM="${NODE_MEM:-256}"
 SCRAPER_CMD="${SCRAPER_CMD:-node --max_old_space_size=$NODE_MEM scraperController.js}"
 mkdir -p "$DIR"
 
@@ -55,8 +55,20 @@ job() { # internal: runs inside the detached process
     season)
       local extra=()
       while [[ "${1:-}" == --* ]]; do extra+=("$1" "$2"); shift 2; done
+      local from="" to="" i
+      for ((i=0; i<${#extra[@]}; i+=2)); do
+        case "${extra[i]}" in --from) from="${extra[i+1]}" ;; --to) to="${extra[i+1]}" ;; esac
+      done
       for league in "$@"; do
-        step "$log" "league '$league' ${extra[*]:-catch-up}" $SCRAPER_CMD -f league --leagueName "$league" ${extra[@]+"${extra[@]}"} || rc=1
+        if [ -n "$from" ]; then
+          # a range runs one season per process, so memory is released between seasons
+          local m y; m=$((10#$(date +%m))); y=$(date +%Y); [ "$m" -ge 7 ] || y=$((y-1))
+          for ((i=from; i<=${to:-$y}; i++)); do
+            step "$log" "league '$league' season $i" $SCRAPER_CMD -f league --leagueName "$league" --season "$i" || rc=1
+          done
+        else
+          step "$log" "league '$league' ${extra[*]:-catch-up}" $SCRAPER_CMD -f league --leagueName "$league" ${extra[@]+"${extra[@]}"} || rc=1
+        fi
       done
       step "$log" "new players" $SCRAPER_CMD -f players || rc=1
       ;;
