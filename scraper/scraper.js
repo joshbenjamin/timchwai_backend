@@ -471,6 +471,94 @@ async function createTeamsAndTeamSeasonsForLeague(leagueName, startYear) {
     }
   }
 
+// ---- Squad extraction from a club's season page on Wikipedia ----
+// Pages differ: the squad table may be a direct sibling of the heading or wrapped in a <section>,
+// and some clubs lay the squad out as two tables side by side inside one outer table.
+const SQUAD_HEADINGS = [
+  "First team squad", "Appearances and goals", "First-team squad", "Squad information",
+  "Squad statistics", "Players and staff", "Players", "Squad", "Appearances, goals and cards",
+  "First team", "Premier League squad", "Player statistics", "Appearances and Goals",
+  "Season squad", "Statistics", "Player details", "Current squad"
+];
+
+function cleanPlayerName(raw) {
+  return raw
+    .replace(/\s*\([^)]*\)/g, '')            // remove brackets and their content
+    .replace(/[†¤‡]/g, '')    // remove †, ¤, ‡
+    .replace(/U\d+/g, '')                    // remove 'UX' pattern
+    .replace(/HG\d*\s*$/, '')                // remove trailing 'HG' + optional number
+    .replace('[L]', '').replace('[R]', '').replace('[S]', '').replace('*', '')
+    .trim();
+}
+
+function playersFromSimpleTable($, table) {
+  const rows = $('tr', table).get();
+  const headerIdx = rows.findIndex(tr => $(tr).children('th').length >= 2);
+  if (headerIdx === -1) return [];
+  const nameCols = [];
+  $(rows[headerIdx]).children('th').each((i, th) => {
+    const t = $(th).text().trim().toLowerCase();
+    if (t === 'name' || t === 'player') nameCols.push(i);
+  });
+  if (!nameCols.length) return [];
+
+  const found = [];
+  for (const row of rows.slice(headerIdx + 1)) {
+    for (const col of nameCols) {
+      const cell = $(row).children().eq(col);
+      const link = $('a:not(span.flagicon a)', cell);
+      if (!link.length) continue;
+
+      const nameEl = cell.contents().not('span.flagicon').not('sup.reference');
+      nameEl.find('small').remove();
+      let name = cleanPlayerName(nameEl.text().trim());
+      if (name === 'League Cup') continue;
+
+      const href = link.attr('href');
+      if (!href || href.includes('redlink=1')) continue;
+      const wiki_link = href.split('/').pop();
+      if (name && wiki_link) found.push({ name, wiki_link });
+    }
+  }
+  return found;
+}
+
+function playersFromTable($, table) {
+  const nested = $('table', table);
+  const tables = nested.length ? nested.get() : [table.get(0)];
+  return tables.flatMap(t => playersFromSimpleTable($, $(t)));
+}
+
+function extractSquadPlayers($) {
+  for (const heading of SQUAD_HEADINGS) {
+    const headings = $(`h2:contains("${heading}"), h3:contains("${heading}")`).get();
+    for (const h of headings) {
+      const level = h.tagName.toLowerCase() === 'h2' ? 2 : 3;
+      const container = $(h).closest('.mw-heading').length ? $(h).closest('.mw-heading') : $(h);
+      let sib = container.next();
+      while (sib.length) {
+        // stop at the next heading of the same or a higher level
+        const isHeading = sib.hasClass('mw-heading') || /^h[1-6]$/i.test(sib[0].tagName);
+        if (isHeading) {
+          const m = (sib.attr('class') || '').match(/mw-heading(\d)/) || sib[0].tagName.match(/h(\d)/i);
+          if (!m || Number(m[1]) <= level) break;
+        }
+        const tables = sib.is('table') ? sib : $('table', sib).filter((i, t) => $(t).parents('table').length === 0);
+        for (const t of tables.get()) {
+          if ($(t).hasClass('ambox')) continue;
+          const players = playersFromTable($, $(t));
+          if (players.length) {
+            const seen = new Set();
+            return players.filter(pl => !seen.has(pl.wiki_link) && seen.add(pl.wiki_link));
+          }
+        }
+        sib = sib.next();
+      }
+    }
+  }
+  return [];
+}
+
 async function processTeamSeasons(leagueName, year){  
   try {
     const league = await League.findOne({ order: [['id', 'ASC']],
@@ -539,128 +627,41 @@ async function processTeamSeasons(leagueName, year){
       const response = await fetchWikiResponse(teamSeason.wiki_link);
 
       if (response.status === 200) { // OK response
-        let $ = cheerio.load(response.data);
+        const $ = cheerio.load(response.data);
+        const playersData = extractSquadPlayers($);
 
-        const headings = [
-          "First team squad", "Appearances and goals", "First-team squad", "Squad information", 
-          "Squad statistics", "Players and staff", "Players", "Squad", "Appearances, goals and cards", 
-          "First team", "Premier League squad", "Player statistics", "Appearances and Goals", 
-          "Season squad", "Statistics", "Player details", "Current squad"
-        ];
-        let playersData = [];
-        let playerTable;
-
-        for (const heading of headings) {
-          let header = $(`h2:contains("${heading}"), h3:contains("${heading}")`);
-
-          logger.info("%s heading found? %s", heading, header);
-          if (header.length) {
-            playerTable = header.parent().nextAll('table').filter((index, table) => {
-              return !$(table).hasClass('ambox');
-            }).first();
-            break;
-          }
-        }
-
-        if (!playerTable){
-          // Example: https://en.wikipedia.org/wiki/2013%E2%80%9314_SC_Freiburg_season (there just isn't a squad list)
+        if (!playersData.length) {
           logger.error(`Can't find player table for, skipping: ${teamSeason.Team.name} in ${teamSeason.wiki_link}`);
           continue;
         }
 
-        if (playerTable.length) {
-
-          const columnHeaderRow = $('tr:first-child', playerTable);
-          let nameColumnIndex = -1;
-
-          $('th', columnHeaderRow).each((index, element) => {
-            if ($(element).text().trim().toLowerCase() === 'name' || $(element).text().trim().toLowerCase() === 'player') {
-              nameColumnIndex = index;
-            }
+        for (const playerData of playersData) {
+          const [player, created_player] = await Player.findOrCreate({
+            where: { name: playerData.name, wiki_link: playerData.wiki_link },
           });
-          
-          if(nameColumnIndex == -1){
-            // Header row could be a header row as well, 
-            logger.info(`columnHeaderRow: ${playerTable}`);
+
+          if (created_player){
+              logger.info(`Player: ${player.name} created`)
+              playersAdded++;
           }
 
-          if (nameColumnIndex !== -1) {
-            console.log(nameColumnIndex);
+          teamPlayers.push(player.name);
 
-            $('tr:not(:first-child)', playerTable).each(async (index, element) => {
-              let playerLink = $(`td:nth-child(${nameColumnIndex + 1}) a:not(span.flagicon a), th:nth-child(${nameColumnIndex + 1}) a:not(span.flagicon a)`, element);
-        
-              // Check if the player link exists
-              if (playerLink.length > 0) {
-                let playerNameElement = $(`td:nth-child(${nameColumnIndex + 1}), th:nth-child(${nameColumnIndex + 1})`, element).contents().not('span.flagicon').not('sup.reference');
-                playerNameElement.find('small').remove(); // Remove 'small' element
+          // Here is where we need to get the season stats for the player
 
-                let playerName = playerNameElement.text().trim();
-                playerName = playerName.replace(/\s*\([^)]*\)/g, ''); // Remove brackets and their content
-                playerName = playerName.replace(/[\u2020\u00A4\u2021]/g, ''); // Remove specific characters: †, ¤, and ‡
-                playerName = playerName.replace(/U\d+/g, ''); // Remove 'UX' pattern (where X is a number)
-                playerName = playerName.replace(/HG\d*\s*$/, ''); // Remove 'HG' followed by an optional number from the end of the string
-                playerName = playerName.replace('[L]', '');
-                playerName = playerName.replace('[R]', '');
-                playerName = playerName.replace('[S]', '');
-                playerName = playerName.replace('*', '');
-                playerName = playerName.trim();
-
-                if(playerName == "League Cup"){
-                  return;
-                }
-
-                let playerHref = playerLink.attr('href');
-                let playerWiki;
-
-                if (playerHref && playerHref.includes('redlink=1')) {
-                  logger.info(`Redlink detected for ${playerName}`);
-                  return;
-                } else {
-                  playerWiki = playerHref ? playerHref.split('/').pop() : null;
-                }
-        
-                // Check if playerName and playerWiki are not empty
-                if (playerName && playerWiki) {
-                  playersData.push({ name: playerName, wiki_link: playerWiki });
-                } else {
-                  logger.error(`PlayerName not present: ${playerName} or PlayerWiki: ${playerWiki}`);
-                }
-              } else {
-                logger.error(`Error: No player link at index: ${index} for ${teamSeason.Team.name}`);
-              }
-            });
-
-            for (const playerData of playersData) {
-              const [player, created_player] = await Player.findOrCreate({
-                where: { name: playerData.name, wiki_link: playerData.wiki_link },
-              });
-
-              if (created_player){
-                  logger.info(`Player: ${player.name} created`)
-                  playersAdded++;
-              }
-
-              teamPlayers.push(player.name);
-
-              // Here is where we need to get the season stats for the player
-
-              const [link, created_player_team_season] = await PlayerTeamSeason.findOrCreate({
-                where: {
-                  player_id: player.id,
-                  team_season_id: teamSeason.id,
-                }
-              });
-
-              if (created_player_team_season){
-                logger.info(`Successfully made Player and Season link: ${player.name} to ${teamSeason.Team.name}`);
-              }
+          const [link, created_player_team_season] = await PlayerTeamSeason.findOrCreate({
+            where: {
+              player_id: player.id,
+              team_season_id: teamSeason.id,
             }
-            logger.info(`Players added (${playersAdded}) successfully`);
-          } else {
-            throw new Error(`Name column not found at: ${teamSeason.wiki_link}`);
-          }        
+          });
+
+          if (created_player_team_season){
+            logger.info(`Successfully made Player and Season link: ${player.name} to ${teamSeason.Team.name}`);
+          }
         }
+
+        logger.info(`Players added (${playersAdded}) successfully`);
       }
 
       logger.info(`Players added for: ${teamSeason.Team.name}\n${teamPlayers}`);
@@ -1690,6 +1691,7 @@ async function addBaseWikiPlayer(link){
 }
 
 module.exports = {
+  extractSquadPlayers,
   currentSeasonStartYear,
   latestProcessedSeason,
   createLeague, 

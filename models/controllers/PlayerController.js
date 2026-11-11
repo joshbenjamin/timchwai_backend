@@ -12,6 +12,22 @@ const LeagueSeason = require('../LeagueSeason');
 const db = require('../../database');
 const logger = require('../../logger');
 
+// The random player must have been in a squad in at least one season of this league.
+// Set RANDOM_PLAYER_LEAGUE in .env to change it, or to "any" to turn the filter off.
+// Only seasons that have been scraped count (Premier League data starts in 2004/05).
+const RANDOM_PLAYER_LEAGUE = process.env.RANDOM_PLAYER_LEAGUE || 'Premier League';
+
+function playedInLeagueClause() {
+  if (RANDOM_PLAYER_LEAGUE.toLowerCase() === 'any') return [];
+  return [literal(`EXISTS (
+    SELECT 1 FROM player_team_seasons pts
+    JOIN team_seasons ts ON ts.id = pts.team_season_id
+    JOIN league_seasons ls ON ls.id = ts.league_season_id
+    JOIN leagues lg ON lg.id = ls.league_id
+    WHERE pts.player_id = "Player"."id" AND lg.name = ${db.escape(RANDOM_PLAYER_LEAGUE)}
+  )`)];
+}
+
 exports.getAllPlayers = async (req, res) => {
   try {
     const players = await Player.findAll({
@@ -178,7 +194,8 @@ exports.getRandomPlayer = async (req, res) => {
       where: {
         name_basic: {
           [Op.ne]: null
-        }
+        },
+        [Op.and]: playedInLeagueClause()
       },
       order: [
         literal('random()')

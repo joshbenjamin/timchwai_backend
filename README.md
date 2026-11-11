@@ -44,6 +44,7 @@ The frontend dev server runs on port 3002 and is in the CORS allowlist.
 | `DB_DIALECT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME` | Postgres connection parts. |
 | `DB_SSL` | `'true'` enables SSL with `rejectUnauthorized: false`. |
 | `WIKI_USER_AGENT` | User-Agent for Wikipedia requests (default `career-history-scraper/1.0`). Wikipedia returns **403** to axios's default User-Agent, so the scraper must send one; Wikimedia's policy asks for contact info in it. |
+| `RANDOM_PLAYER_LEAGUE` | League a random player must have been in a squad of (default `Premier League`; `any` turns the filter off). Applies to `/random_player`. Only scraped seasons count (Premier League data starts 2004/05). |
 | `DB_LOGGING` | `'true'` prints every SQL statement (very verbose: it made logs hundreds of MB). Off by default. |
 | `NODE_ENV` | `test` stops `app.js` from calling `listen()` (for jest). |
 
@@ -58,7 +59,7 @@ All GET, JSON. Controllers are in `models/controllers/`.
 | `/` | inline | Health check, returns text `Welcome to TIMCHWAI backend!` |
 | `/players` | `PlayerController.getAllPlayers` | id, name, name_basic, birth_date for search. 404 if none. |
 | `/player?playerId=` | `getPlayerById` | Player with career. 400 if `playerId` missing. |
-| `/random_player` | `getRandomPlayer` | Used by the "Get random player" button. |
+| `/random_player` | `getRandomPlayer` | Used by the "Get random player" button. Only players with a squad entry in a `RANDOM_PLAYER_LEAGUE` (Premier League) season, 100+ apps in one career. |
 | `/player_in_team_seasons` | `getPlayerInTeamSeasons` | |
 | `/random_euros_2024` | `getPlayerInEuros2024` | |
 | `/last_sync` | `SyncController.getLastSync` | `{last_sync}`: the most recent `players.updatedAt`, i.e. when any player was last modified. Shown in the app header. |
@@ -96,6 +97,7 @@ Backup of production: `sudo -u postgres pg_dump -Fc timchwai_db > /root/backups/
 - `create_league.sh`: loops `-f league --leagueName "Premier League" --count 1..20`, one season per count.
 - `create_international_league.sh`: same for `-f internationalLeague --internationalName "UEFA European Championship"`.
 - `-f refreshPlayers [--limit 50] [--name "Salah"]`: re-scrapes **existing** players (careers, apps, goals, bio), least recently updated first. Idempotent: careers are `findOrCreate` + update, existing values are kept when Wikipedia yields nothing, and `image` is never replaced (images were migrated to Cloudinary). Run it in batches.
+- Squad extraction (`extractSquadPlayers` in `scraper/scraper.js`) copes with the two page layouts seen on Wikipedia club-season pages: tables wrapped in `<section>` under the heading, and two squads side by side as nested tables. A team season that ends with **0 players** means the page layout isn't handled; find them with `SELECT ... COUNT(pts.id) < 18` over `team_seasons` (see git history for the query) and rerun the season (it only adds).
 - `-f players`: processes only *new* players (`name_basic` is null); asks for confirmation.
 - `-f league --leagueName "<League>"` chooses seasons by **start year** (2025 = 2025/26): no flag = catch-up (from the newest season that already has teams, re-run, through the current season; the current season is the one that began last July/August); `--season 2024` = one season; `--from 2022 [--to 2025]` = a range. `--count N` is the old calendar-year form and is not needed any more. `create_league.sh` (loops `--count 1..20`) predates this and never reaches the current season.
 - `changeImgSource.js`: image source/Cloudinary migration helper.
