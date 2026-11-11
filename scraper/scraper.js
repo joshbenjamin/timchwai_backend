@@ -959,10 +959,18 @@ async function processPlayers(){
     const ans = await askQuestion(`Are you sure you want to scrape ${length} players? `);
   }
 
+  let failed = 0;
   for (const player in players) {
-    await processPlayer(players[player]);
+    try {
+      await processPlayer(players[player]);
+    } catch (error) {
+      // one bad Wikipedia link must not stop the rest; the player stays unprocessed (name_basic null)
+      failed++;
+      logger.error(`Player failed, skipping: ${players[player].name} (${players[player].wiki_link}): ${error.message}`);
+    }
     logger.info(`Processing player ${player} of ${length}`);
   }
+  logger.info(`Players done: ${length - failed} processed, ${failed} failed`);
 
 }
 
