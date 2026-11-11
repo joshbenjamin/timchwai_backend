@@ -21,6 +21,33 @@ function currentSeasonStartYear(now = new Date()) {
 }
 
 // Newest season (start year) of a league that already has teams loaded, or null.
+// Wikipedia links reach us either percent-encoded ("Cesc_F%C3%A0bregas", "John_O%27Shea") or plain
+// ("Cesc_Fàbregas", "John_O'Shea") depending on how the page was rendered at the time. Compare them decoded.
+function normalizeWikiLink(link) {
+  if (!link) return '';
+  let l = String(link);
+  try { l = decodeURIComponent(l); } catch (e) { /* keep as is */ }
+  return l.replace(/ /g, '_');
+}
+
+// findOrCreate for a player that treats differently-encoded links as the same player.
+async function findOrCreatePlayer(name, wiki_link) {
+  const decoded = normalizeWikiLink(wiki_link);
+  const variants = [...new Set([
+    wiki_link, decoded,
+    encodeURIComponent(decoded),
+    encodeURIComponent(decoded).replace(/'/g, '%27'),
+    encodeURI(decoded),
+  ])];
+  const candidates = await Player.findAll({
+    where: { [Op.or]: [{ name }, { wiki_link: { [Op.in]: variants } }] },
+    order: [['id', 'ASC']],
+  });
+  const existing = candidates.find(p => p.wiki_link && normalizeWikiLink(p.wiki_link) === decoded);
+  if (existing) return [existing, false];
+  return Player.findOrCreate({ where: { name, wiki_link } });
+}
+
 async function latestProcessedSeason(leagueName) {
   const [row] = await db.query(
     `SELECT MAX(ls.from_year) AS y
@@ -636,9 +663,7 @@ async function processTeamSeasons(leagueName, year){
         }
 
         for (const playerData of playersData) {
-          const [player, created_player] = await Player.findOrCreate({
-            where: { name: playerData.name, wiki_link: playerData.wiki_link },
-          });
+          const [player, created_player] = await findOrCreatePlayer(playerData.name, playerData.wiki_link);
 
           if (created_player){
               logger.info(`Player: ${player.name} created`)
@@ -716,7 +741,7 @@ const processInternationalTournaments = async (leagueName, year) => {
       if (!playerLink) return;
 
       const wiki = playerLink.toString().replace('/wiki/', '');
-      const [player, created_player] = await Player.findOrCreate({ where: { name: modifiedName, wiki_link: wiki } });
+      const [player, created_player] = await findOrCreatePlayer(modifiedName, wiki);
 
       if (created_player) {
         logger.info(`Player: ${player.name} created`);
@@ -1681,16 +1706,95 @@ async function refreshPlayers({ limit = 50, name = null } = {}) {
 
 async function addBaseWikiPlayer(link){
   const name = link.replace('_', ' ');
-  const [player, created_player] = await Player.findOrCreate({
-    where: { name: name, wiki_link: link },
-  });
+  const [player, created_player] = await findOrCreatePlayer(name, link);
 
   if (created_player){
       logger.info(`Player: ${player.name} created`)
   }
 }
 
+// Merge duplicate players: same name_basic + birth date AND the same Wikipedia page (links compared decoded).
+// The lowest id (the original row) is kept. From each duplicate, careers and squad links the keeper
+// does not already have are moved over, the rest are dropped, then the duplicate row is deleted.
+// Same name + birth date but a different page is only reported. Dry run unless apply = true.
+async function mergeDuplicatePlayers({ apply = false } = {}) {
+  const rows = await Player.findAll({
+    where: { name_basic: { [Op.ne]: null }, birth_date: { [Op.ne]: null } },
+    attributes: ['id', 'name', 'name_basic', 'birth_date', 'wiki_link'],
+    order: [['id', 'ASC']],
+    raw: true,
+  });
+
+  const groups = new Map();
+  for (const r of rows) {
+    const key = `${r.name_basic}|${new Date(r.birth_date).toISOString()}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+
+  const clusters = [];   // [{ keeper, dupes: [..] }]
+  const ambiguous = [];  // same name + dob, different page
+  for (const members of groups.values()) {
+    if (members.length < 2) continue;
+    const byLink = new Map();
+    for (const m of members) {
+      const k = m.wiki_link ? normalizeWikiLink(m.wiki_link) : `__null_${m.id}`;
+      if (!byLink.has(k)) byLink.set(k, []);
+      byLink.get(k).push(m);
+    }
+    for (const same of byLink.values()) {
+      if (same.length > 1) clusters.push({ keeper: same[0], dupes: same.slice(1) });
+    }
+    if (byLink.size > 1) ambiguous.push(members);
+  }
+
+  const dupeCount = clusters.reduce((n, c) => n + c.dupes.length, 0);
+  logger.info(`Duplicate players: ${clusters.length} people with extra rows, ${dupeCount} rows to merge away. Same name + birth date but different page (left alone): ${ambiguous.length} groups.`);
+  for (const c of clusters.slice(0, 10)) {
+    logger.info(`  e.g. keep ${c.keeper.id} ${c.keeper.name} (${c.keeper.wiki_link}); merge ${c.dupes.map(d => `${d.id} (${d.wiki_link})`).join(', ')}`);
+  }
+  for (const g of ambiguous.slice(0, 10)) {
+    logger.info(`  ambiguous: ${g.map(m => `${m.id} ${m.name} (${m.wiki_link})`).join(' | ')}`);
+  }
+  if (!apply) {
+    logger.info('Dry run only. Re-run with --apply to merge.');
+    return { clusters: clusters.length, dupes: dupeCount, ambiguous: ambiguous.length, applied: false };
+  }
+
+  let movedCareers = 0, droppedCareers = 0, movedLinks = 0, droppedLinks = 0, deleted = 0;
+  for (const { keeper, dupes } of clusters) {
+    await db.transaction(async (t) => {
+      for (const dupe of dupes) {
+        const keeperCareers = await Career.findAll({ where: { player_id: keeper.id }, raw: true, transaction: t });
+        const dupeCareers = await Career.findAll({ where: { player_id: dupe.id }, transaction: t });
+        for (const c of dupeCareers) {
+          const has = keeperCareers.some(k => k.team_id === c.team_id && k.from_year === c.from_year &&
+            k.to_year === c.to_year && k.type === c.type);
+          if (has) { await c.destroy({ transaction: t }); droppedCareers++; }
+          else { await c.update({ player_id: keeper.id }, { transaction: t }); keeperCareers.push(c.get({ plain: true })); movedCareers++; }
+        }
+
+        const keeperLinks = new Set((await PlayerTeamSeason.findAll({ where: { player_id: keeper.id }, raw: true, transaction: t })).map(l => l.team_season_id));
+        const dupeLinks = await PlayerTeamSeason.findAll({ where: { player_id: dupe.id }, transaction: t });
+        for (const l of dupeLinks) {
+          if (keeperLinks.has(l.team_season_id)) { await l.destroy({ transaction: t }); droppedLinks++; }
+          else { await l.update({ player_id: keeper.id }, { transaction: t }); keeperLinks.add(l.team_season_id); movedLinks++; }
+        }
+
+        await Player.destroy({ where: { id: dupe.id }, transaction: t });
+        deleted++;
+      }
+    });
+  }
+  logger.info(`Merged: ${deleted} duplicate players deleted; careers moved ${movedCareers}, dropped ${droppedCareers}; squad links moved ${movedLinks}, dropped ${droppedLinks}.`);
+  return { clusters: clusters.length, dupes: dupeCount, ambiguous: ambiguous.length, applied: true };
+}
+
+
 module.exports = {
+  findOrCreatePlayer,
+  mergeDuplicatePlayers,
+  normalizeWikiLink,
   extractSquadPlayers,
   currentSeasonStartYear,
   latestProcessedSeason,
