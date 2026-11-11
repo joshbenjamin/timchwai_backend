@@ -1069,7 +1069,15 @@ async function processEuro2024Players(){
 
 // refresh=true: re-scrape an already-processed player. Existing values are kept when the
 // page yields nothing (and the image is never replaced, it may already be on Cloudinary).
-async function processPlayer(player, { refresh = false } = {}){
+// Scrape one player's page. A newly processed player (not a refresh) is then merged into an older row
+// for the same person, if one exists (same name_basic + birth date), so renamed Wikipedia pages
+// ("Joe_Gomez" vs "Joe_Gomez_(footballer)") do not leave two rows behind.
+async function processPlayer(player, opts = {}) {
+  await processPlayerPage(player, opts);
+  if (!opts.refresh) await mergeIfDuplicate(player.id);
+}
+
+async function processPlayerPage(player, { refresh = false } = {}){
   if (player){
     logger.info(`Found ${player.name}`);
   } else {
@@ -1713,11 +1721,54 @@ async function addBaseWikiPlayer(link){
   }
 }
 
-// Merge duplicate players: same name_basic + birth date AND the same Wikipedia page (links compared decoded).
-// The lowest id (the original row) is kept. From each duplicate, careers and squad links the keeper
-// does not already have are moved over, the rest are dropped, then the duplicate row is deleted.
-// Same name + birth date but a different page is only reported. Dry run unless apply = true.
-async function mergeDuplicatePlayers({ apply = false } = {}) {
+// Move everything from one player row onto another, then delete the extra row.
+// Careers and squad links the keeper already has are dropped (they are the same data); the rest are moved.
+async function absorbPlayer(keeperId, dupeId, t, c) {
+  const keeperCareers = await Career.findAll({ where: { player_id: keeperId }, raw: true, transaction: t });
+  const dupeCareers = await Career.findAll({ where: { player_id: dupeId }, transaction: t });
+  for (const car of dupeCareers) {
+    const has = keeperCareers.some(k => k.team_id === car.team_id && k.from_year === car.from_year &&
+      k.to_year === car.to_year && k.type === car.type);
+    if (has) { await car.destroy({ transaction: t }); c.droppedCareers++; }
+    else { await car.update({ player_id: keeperId }, { transaction: t }); keeperCareers.push(car.get({ plain: true })); c.movedCareers++; }
+  }
+
+  const keeperLinks = new Set((await PlayerTeamSeason.findAll({ where: { player_id: keeperId }, raw: true, transaction: t })).map(l => l.team_season_id));
+  const dupeLinks = await PlayerTeamSeason.findAll({ where: { player_id: dupeId }, transaction: t });
+  for (const l of dupeLinks) {
+    if (keeperLinks.has(l.team_season_id)) { await l.destroy({ transaction: t }); c.droppedLinks++; }
+    else { await l.update({ player_id: keeperId }, { transaction: t }); keeperLinks.add(l.team_season_id); c.movedLinks++; }
+  }
+
+  await Player.destroy({ where: { id: dupeId }, transaction: t });
+  c.deleted++;
+}
+
+const newCounters = () => ({ movedCareers: 0, droppedCareers: 0, movedLinks: 0, droppedLinks: 0, deleted: 0 });
+
+// After scraping a new player: merge into an older row for the same person (same name_basic + birth date).
+async function mergeIfDuplicate(playerId) {
+  try {
+    const p = await Player.findByPk(playerId, { raw: true });
+    if (!p || !p.name_basic || !p.birth_date) return;
+    const keeper = await Player.findOne({
+      where: { name_basic: p.name_basic, birth_date: p.birth_date, id: { [Op.lt]: p.id } },
+      order: [['id', 'ASC']],
+      raw: true,
+    });
+    if (!keeper) return;
+    await db.transaction(t => absorbPlayer(keeper.id, p.id, t, newCounters()));
+    logger.info(`Merged duplicate ${p.name} (${p.wiki_link}, id ${p.id}) into existing player ${keeper.id} (${keeper.wiki_link})`);
+  } catch (error) {
+    logger.error(`Duplicate check failed for player ${playerId}: ${error.message}`);
+  }
+}
+
+// Merge duplicate players that are already in the database.
+//   default: same name_basic + birth date AND the same Wikipedia page (links compared decoded)
+//   loose:   same name_basic + birth date even if the page differs (renamed pages, redirects)
+// The lowest id (the original row) is kept. Dry run unless apply = true.
+async function mergeDuplicatePlayers({ apply = false, loose = false } = {}) {
   const rows = await Player.findAll({
     where: { name_basic: { [Op.ne]: null }, birth_date: { [Op.ne]: null } },
     attributes: ['id', 'name', 'name_basic', 'birth_date', 'wiki_link'],
@@ -1733,9 +1784,13 @@ async function mergeDuplicatePlayers({ apply = false } = {}) {
   }
 
   const clusters = [];   // [{ keeper, dupes: [..] }]
-  const ambiguous = [];  // same name + dob, different page
+  const ambiguous = [];  // same name + dob, different page (only when not loose)
   for (const members of groups.values()) {
     if (members.length < 2) continue;
+    if (loose) {
+      clusters.push({ keeper: members[0], dupes: members.slice(1) });
+      continue;
+    }
     const byLink = new Map();
     for (const m of members) {
       const k = m.wiki_link ? normalizeWikiLink(m.wiki_link) : `__null_${m.id}`;
@@ -1749,7 +1804,7 @@ async function mergeDuplicatePlayers({ apply = false } = {}) {
   }
 
   const dupeCount = clusters.reduce((n, c) => n + c.dupes.length, 0);
-  logger.info(`Duplicate players: ${clusters.length} people with extra rows, ${dupeCount} rows to merge away. Same name + birth date but different page (left alone): ${ambiguous.length} groups.`);
+  logger.info(`Duplicate players (${loose ? 'loose' : 'same page'}): ${clusters.length} people with extra rows, ${dupeCount} rows to merge away. Same name + birth date but different page (left alone): ${ambiguous.length} groups.`);
   for (const c of clusters.slice(0, 10)) {
     logger.info(`  e.g. keep ${c.keeper.id} ${c.keeper.name} (${c.keeper.wiki_link}); merge ${c.dupes.map(d => `${d.id} (${d.wiki_link})`).join(', ')}`);
   }
@@ -1761,39 +1816,20 @@ async function mergeDuplicatePlayers({ apply = false } = {}) {
     return { clusters: clusters.length, dupes: dupeCount, ambiguous: ambiguous.length, applied: false };
   }
 
-  let movedCareers = 0, droppedCareers = 0, movedLinks = 0, droppedLinks = 0, deleted = 0;
+  const counters = newCounters();
   for (const { keeper, dupes } of clusters) {
     await db.transaction(async (t) => {
-      for (const dupe of dupes) {
-        const keeperCareers = await Career.findAll({ where: { player_id: keeper.id }, raw: true, transaction: t });
-        const dupeCareers = await Career.findAll({ where: { player_id: dupe.id }, transaction: t });
-        for (const c of dupeCareers) {
-          const has = keeperCareers.some(k => k.team_id === c.team_id && k.from_year === c.from_year &&
-            k.to_year === c.to_year && k.type === c.type);
-          if (has) { await c.destroy({ transaction: t }); droppedCareers++; }
-          else { await c.update({ player_id: keeper.id }, { transaction: t }); keeperCareers.push(c.get({ plain: true })); movedCareers++; }
-        }
-
-        const keeperLinks = new Set((await PlayerTeamSeason.findAll({ where: { player_id: keeper.id }, raw: true, transaction: t })).map(l => l.team_season_id));
-        const dupeLinks = await PlayerTeamSeason.findAll({ where: { player_id: dupe.id }, transaction: t });
-        for (const l of dupeLinks) {
-          if (keeperLinks.has(l.team_season_id)) { await l.destroy({ transaction: t }); droppedLinks++; }
-          else { await l.update({ player_id: keeper.id }, { transaction: t }); keeperLinks.add(l.team_season_id); movedLinks++; }
-        }
-
-        await Player.destroy({ where: { id: dupe.id }, transaction: t });
-        deleted++;
-      }
+      for (const dupe of dupes) await absorbPlayer(keeper.id, dupe.id, t, counters);
     });
   }
-  logger.info(`Merged: ${deleted} duplicate players deleted; careers moved ${movedCareers}, dropped ${droppedCareers}; squad links moved ${movedLinks}, dropped ${droppedLinks}.`);
+  logger.info(`Merged: ${counters.deleted} duplicate players deleted; careers moved ${counters.movedCareers}, dropped ${counters.droppedCareers}; squad links moved ${counters.movedLinks}, dropped ${counters.droppedLinks}.`);
   return { clusters: clusters.length, dupes: dupeCount, ambiguous: ambiguous.length, applied: true };
 }
-
 
 module.exports = {
   findOrCreatePlayer,
   mergeDuplicatePlayers,
+  mergeIfDuplicate,
   normalizeWikiLink,
   extractSquadPlayers,
   currentSeasonStartYear,

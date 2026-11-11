@@ -151,6 +151,11 @@ const argv = yargs(hideBin(process.argv))
     type: 'boolean',
     default: false,
   })
+  .option('loose', {
+    description: 'mergeDuplicates: also merge players with the same name + birth date but a different Wikipedia page (renamed pages)',
+    type: 'boolean',
+    default: false,
+  })
   .option('count', {
     alias: 'c',
     description: 'Specify the count for season calculation',
@@ -185,7 +190,7 @@ const argv = yargs(hideBin(process.argv))
       await refreshPlayers({ limit: argv.limit, name: argv.name });
       console.log('Refreshing players completed');
     } else if (argv.func === 'mergeDuplicates') {
-      await mergeDuplicatePlayers({ apply: argv.apply });
+      await mergeDuplicatePlayers({ apply: argv.apply, loose: argv.loose });
       console.log('mergeDuplicates finished');
     } else if (argv.func === 'teams') {
       await teams();
