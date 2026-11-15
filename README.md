@@ -108,7 +108,7 @@ The app header's "Data last updated" date is dynamic: the scraper rewrites a pla
 
 ### Running syncs in the background (`sync.sh`)
 
-Run on the droplet from `/root/timchwai_backend`. Jobs are detached, so they survive closing SSH. Each job has a log in `logs/sync/<id>.log` and a state (`running`, `done`, `failed`, `stopped`, `lost`).
+Run on the droplet from `/root/timchwai_backend`. Only one job runs at a time: starting a second is refused while one is `running` (`FORCE=1` overrides; two jobs at once fight over memory and can write the same rows twice). Jobs are detached, so they survive closing SSH. Each job has a log in `logs/sync/<id>.log` and a state (`running`, `done`, `failed`, `stopped`, `lost`).
 
 ```bash
 ./sync.sh season "Premier League" "La Liga"   # catch up each league to the current season, then load new players

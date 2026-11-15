@@ -15,6 +15,7 @@
 #   ./sync.sh stop [id]                            stop a running job
 #
 # Files: logs/sync/<id>.log (output), <id>.status, <id>.pid. <id> = timestamp-label.
+# Only one job runs at a time (FORCE=1 overrides).
 # Env: NODE_MEM (MB, default 384; the droplet has ~450 MB RAM), SCRAPER_CMD (override for testing).
 set -u
 cd "$(dirname "$0")"
@@ -85,6 +86,16 @@ job() { # internal: runs inside the detached process
 
 start() { # start <label> <kind> <args...>
   local label="$1" kind="$2"; shift 2
+  # Two jobs at once fight over memory and can write the same rows twice. Refuse unless FORCE=1.
+  local f other
+  for f in "$DIR"/*.status; do
+    [ -e "$f" ] || continue
+    other="$(basename "$f" .status)"
+    if [ "$(state "$other")" = "running" ] && [ "${FORCE:-0}" != 1 ]; then
+      echo "Job $other is still running. Wait for it (./sync.sh status), stop it (./sync.sh stop $other), or set FORCE=1." >&2
+      exit 1
+    fi
+  done
   local id; id="$(date +%Y%m%d-%H%M%S)-$(echo "$label" | tr -c 'A-Za-z0-9\n' '_' | tr -s '_')"
   echo queued > "$DIR/$id.status"
   nohup "$0" _job "$id" "$kind" "$@" < /dev/null > /dev/null 2>&1 &
