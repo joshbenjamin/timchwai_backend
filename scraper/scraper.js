@@ -508,6 +508,9 @@ const SQUAD_HEADINGS = [
   "Season squad", "Statistics", "Player details", "Current squad"
 ];
 
+// Rows in squad/stats tables that are not people
+const NOT_A_PLAYER = /^(own goals?|total|totals|opponents?|team total|others?)$/i;
+
 // Footnote markers such as "[3]", "[42]", "[notes 2]" or "[a]"
 const FOOTNOTE_RE = /\s*\[[^\]]*\]/g;
 const HAS_FOOTNOTE = /\[[^\]]*\]/;   // stateless test (a /g regex keeps lastIndex between calls)
@@ -546,8 +549,10 @@ function playersFromSimpleTable($, table) {
       let name = cleanPlayerName(nameEl.text().trim());
       if (name === 'League Cup') continue;
 
+      // Stats tables have summary rows ("Own goals", "Total") and footnote anchors ("#cite_note-...") that are not players
+      if (NOT_A_PLAYER.test(name)) continue;
       const href = link.attr('href');
-      if (!href || href.includes('redlink=1')) continue;
+      if (!href || href.startsWith('#') || href.includes('cite_note') || href.includes('redlink=1')) continue;
       const wiki_link = href.split('/').pop();
       if (name && wiki_link) found.push({ name, wiki_link });
     }
@@ -1104,21 +1109,26 @@ async function processPlayerPage(player, { refresh = false } = {}){
 
   if (response && response.status === 200){
     const $ = cheerio.load(response.data);
-    const infobox = $('table.infobox.vcard:not([class*=" "])');
+    // Wikipedia gives the player infobox class "infobox vcard", or "infobox infobox-table vcard" on newer pages
+    const vcardBox = $('table.infobox.vcard').first();
+    const infobox = vcardBox.length ? vcardBox : $('table.infobox').first();
 
-    if (!infobox){
+    if (!infobox.length){
       logger.info(`No infobox found for: ${player.name}`);
       return;
     }
 
-    const positionsElement = infobox.find('.infobox-label:contains("Position")')
-      .add('.infobox-label:contains("Positions")')
-      .add('.infobox-label:contains("Position(s)")')
-      .next('.infobox-data');
-
-    positionsElement.find('.reference').remove();
-
-    const positions = positionsElement.find('a').map((_, el) => $(el).text()).get();
+    const positionCell = infobox.find('.infobox-label')
+      .filter((_, el) => /^position/i.test($(el).text().trim()))
+      .first()
+      .next('.infobox-data')
+      .clone();
+    positionCell.find('sup, .reference, .mw-ref, style').remove();   // footnote markers
+    let positions = positionCell.find('a').map((_, el) => $(el).text().trim()).get().filter(Boolean);
+    if (!positions.length) {
+      positions = positionCell.text().split(/[,/]|\band\b/i).map(t => t.trim()).filter(Boolean);
+    }
+    positions = [...new Set(positions)];
     logger.info(`Positions found for ${player.name} --- ${positions}`);
 
     // const height = infobox.find('.infobox-data:contains("ft")').text().trim();
@@ -1693,8 +1703,11 @@ async function deleteDuplicatePlayers(){
 
 // Re-scrape existing players (careers, apps, goals, bio), least recently updated first.
 // Safe to re-run: careers are findOrCreate + update, and existing values/images are preserved.
-async function refreshPlayers({ limit = 50, name = null } = {}) {
+async function refreshPlayers({ limit = 50, name = null, missingPositions = false } = {}) {
   const where = { name_basic: { [Op.ne]: null }, wiki_link: { [Op.ne]: null } };
+  if (missingPositions) {
+    where[Op.and] = [Sequelize.literal("(positions IS NULL OR positions = '{}')")];
+  }
   if (name) {
     where.name = { [Op.iLike]: `%${name}%` };
   }

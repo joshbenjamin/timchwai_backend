@@ -135,6 +135,11 @@ const argv = yargs(hideBin(process.argv))
     description: 'refreshPlayers: only players whose name contains this text',
     type: 'string',
   })
+  .option('missingPositions', {
+    description: 'refreshPlayers: only players that have no position yet',
+    type: 'boolean',
+    default: false,
+  })
   .option('season', {
     description: 'league: load only this season, given as its start year (2025 = 2025/26)',
     type: 'number',
@@ -188,7 +193,7 @@ const argv = yargs(hideBin(process.argv))
       await players();
       console.log('Processing all players completed successfully');
     } else if (argv.func === 'refreshPlayers') {
-      await refreshPlayers({ limit: argv.limit, name: argv.name });
+      await refreshPlayers({ limit: argv.limit, name: argv.name, missingPositions: argv.missingPositions });
       console.log('Refreshing players completed');
     } else if (argv.func === 'mergeDuplicates') {
       await mergeDuplicatePlayers({ apply: argv.apply, loose: argv.loose });
