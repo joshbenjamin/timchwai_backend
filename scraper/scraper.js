@@ -48,6 +48,47 @@ async function findOrCreatePlayer(name, wiki_link) {
   return Player.findOrCreate({ where: { name, wiki_link } });
 }
 
+// Same idea for clubs: "Paris_Saint-Germain_F.C." / "Paris_Saint-Germain_FC", "Brighton_%26_Hove…" / "Brighton_&_Hove…",
+// "1._FC_K%C3%B6ln" / "1._FC_Köln" are one club. Compare links ignoring encoding, accents, case and punctuation.
+function normalizeTeamLink(link) {
+  if (!link) return '';
+  let l = String(link);
+  try { l = decodeURIComponent(l); } catch (e) { /* keep as is */ }
+  return l.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Index of every team by normalized link (a few thousand rows), built once per process and kept up to date.
+let teamIndex = null;
+async function getTeamIndex() {
+  if (!teamIndex) {
+    teamIndex = new Map();
+    const rows = await Team.findAll({ attributes: ['id', 'wiki_link'], order: [['id', 'ASC']], raw: true });
+    for (const r of rows) {
+      const k = normalizeTeamLink(r.wiki_link);
+      if (k && !teamIndex.has(k)) teamIndex.set(k, r.id);   // lowest id wins
+    }
+  }
+  return teamIndex;
+}
+
+// Existing team for this page (spelling-insensitive), or null. Never creates.
+async function findOrCreateTeamLookup(wiki_link) {
+  const key = normalizeTeamLink(wiki_link);
+  if (!key) return null;
+  const id = (await getTeamIndex()).get(key);
+  return id ? Team.findByPk(id) : null;
+}
+
+// Find the existing team for this page, or create it. Never creates a second row for the same page.
+async function findOrCreateTeam(name, wiki_link) {
+  const existing = await findOrCreateTeamLookup(wiki_link);
+  if (existing) return [existing, false];
+  const [team, created] = await Team.findOrCreate({ where: { name, wiki_link } });
+  const k = normalizeTeamLink(wiki_link);
+  if (k && !(await getTeamIndex()).has(k)) teamIndex.set(k, team.id);
+  return [team, created];
+}
+
 async function latestProcessedSeason(leagueName) {
   const [row] = await db.query(
     `SELECT MAX(ls.from_year) AS y
@@ -363,12 +404,7 @@ async function createTeamsAndTeamSeasonsForLeague(leagueName, startYear) {
       for (const teamData of teamsData) {
         console.log(`Operating on ${teamData.name}`);
         // Find or create the team
-        const [team, created_team] = await Team.findOrCreate({
-          where: {
-            name: teamData.name,
-            wiki_link: teamData.wiki_link
-          },
-        });
+        const [team, created_team] = await findOrCreateTeam(teamData.name, teamData.wiki_link);
 
         if (created_team){
             console.log(`Team ${teamData.name} created.`)
@@ -467,12 +503,7 @@ async function createTeamsAndTeamSeasonsForLeague(leagueName, startYear) {
       for (const t of teams) {
         console.log(`Operating on ${t}`);
         // Find or create the team
-        const [team, created_team] = await Team.findOrCreate({
-          where: {
-            name: t.name,
-            wiki_link: t.wiki_link
-          },
-        });
+        const [team, created_team] = await findOrCreateTeam(t.name, t.wiki_link);
 
         if (created_team){
             console.log(`Team ${t.name} created.`)
@@ -1325,7 +1356,7 @@ async function processPlayerPage(player, { refresh = false } = {}){
           logger.info('\n----------------\n');
 
           // First find team with name, then create new team if this is a new URL
-          const teamWithName = await Team.findOne({
+          const teamWithName = (teamUrl && (await findOrCreateTeamLookup(teamUrl))) || await Team.findOne({
             where: {
               name: teamName,
             }
@@ -1828,6 +1859,91 @@ async function cleanFootnoteNames({ apply = false } = {}) {
   return { affected: plan.length, applied: true };
 }
 
+// Merge duplicate teams (the same club stored under differently spelled links). Dry run unless apply = true.
+// Keeper = the row with the most team seasons, then one with a logo, then the lowest id. Everything on the extra row
+// (careers, team seasons and their squads) is moved to the keeper; careers that become exact copies are removed.
+async function mergeDuplicateTeams({ apply = false } = {}) {
+  const teams = await db.query(
+    `SELECT t.id, t.name, t.wiki_link, t.image, (SELECT COUNT(*) FROM team_seasons ts WHERE ts.team_id = t.id)::int AS seasons
+       FROM teams t ORDER BY t.id`, { type: QueryTypes.SELECT });
+
+  const groups = new Map();
+  for (const t of teams) {
+    const k = normalizeTeamLink(t.wiki_link);
+    if (!k) continue;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(t);
+  }
+  const clusters = [];
+  for (const members of groups.values()) {
+    if (members.length < 2) continue;
+    const ranked = [...members].sort((a, b) => (b.seasons - a.seasons) || ((b.image ? 1 : 0) - (a.image ? 1 : 0)) || (a.id - b.id));
+    clusters.push({ keeper: ranked[0], dupes: ranked.slice(1) });
+  }
+
+  // Same name, different page: only reported (could be two different clubs)
+  const byName = new Map();
+  for (const t of teams) { const k = t.name.toLowerCase(); if (!byName.has(k)) byName.set(k, []); byName.get(k).push(t); }
+  const inCluster = new Set(clusters.flatMap(c => [c.keeper.id, ...c.dupes.map(d => d.id)]));
+  const sameNameOnly = [...byName.values()].filter(m => m.length > 1 && new Set(m.map(x => normalizeTeamLink(x.wiki_link))).size > 1 && m.some(x => !inCluster.has(x.id)));
+
+  const dupeCount = clusters.reduce((n, c) => n + c.dupes.length, 0);
+  logger.info(`Duplicate teams: ${clusters.length} clubs stored more than once, ${dupeCount} extra rows to merge. Same name but a different page (left alone): ${sameNameOnly.length} names.`);
+  for (const c of clusters.slice(0, 10)) {
+    logger.info(`  e.g. keep ${c.keeper.id} ${c.keeper.name} (${c.keeper.wiki_link}, ${c.keeper.seasons} seasons); merge ${c.dupes.map(d => `${d.id} ${d.name} (${d.wiki_link}, ${d.seasons} seasons)`).join(', ')}`);
+  }
+  for (const m of sameNameOnly.slice(0, 15)) {
+    logger.info(`  same name, different page: ${m.map(x => `${x.id} ${x.name} (${x.wiki_link})`).join(' | ')}`);
+  }
+  if (!apply) { logger.info('Dry run only. Re-run with --apply.'); return { clusters: clusters.length, dupes: dupeCount, applied: false }; }
+
+  let careersMoved = 0, careersRemoved = 0, seasonsMoved = 0, seasonsMerged = 0, deleted = 0;
+  for (const { keeper, dupes } of clusters) {
+    await db.transaction(async (t) => {
+      const q = (sql, replacements) => db.query(sql, { replacements, transaction: t, type: QueryTypes.RAW });
+      for (const dupe of dupes) {
+        const [, moved] = await q('UPDATE careers SET team_id = :k WHERE team_id = :d', { k: keeper.id, d: dupe.id });
+        careersMoved += moved.rowCount || 0;
+
+        const dupeSeasons = await db.query('SELECT id, league_season_id FROM team_seasons WHERE team_id = :d',
+          { replacements: { d: dupe.id }, transaction: t, type: QueryTypes.SELECT });
+        for (const ds of dupeSeasons) {
+          const [ks] = await db.query('SELECT id FROM team_seasons WHERE team_id = :k AND league_season_id = :ls ORDER BY id LIMIT 1',
+            { replacements: { k: keeper.id, ls: ds.league_season_id }, transaction: t, type: QueryTypes.SELECT });
+          if (ks) {
+            // the keeper already has this season: move squad links across, drop ones it already has
+            await q(`UPDATE player_team_seasons SET team_season_id = :ks WHERE team_season_id = :ds
+                      AND player_id NOT IN (SELECT player_id FROM player_team_seasons WHERE team_season_id = :ks)`, { ks: ks.id, ds: ds.id });
+            await q('DELETE FROM player_team_seasons WHERE team_season_id = :ds', { ds: ds.id });
+            await q('DELETE FROM team_seasons WHERE id = :ds', { ds: ds.id });
+            seasonsMerged++;
+          } else {
+            await q('UPDATE team_seasons SET team_id = :k WHERE id = :ds', { k: keeper.id, ds: ds.id });
+            seasonsMoved++;
+          }
+        }
+
+        // fill gaps on the keeper from the extra row
+        await q(`UPDATE teams k SET image = COALESCE(k.image, d.image), full_name = COALESCE(k.full_name, d.full_name),
+                   nicknames = COALESCE(k.nicknames, d.nicknames), founded = COALESCE(k.founded, d.founded),
+                   stadium = COALESCE(k.stadium, d.stadium), capacity = COALESCE(k.capacity, d.capacity),
+                   head_coach = COALESCE(k.head_coach, d.head_coach)
+                 FROM teams d WHERE k.id = :k AND d.id = :d`, { k: keeper.id, d: dupe.id });
+        await q('DELETE FROM teams WHERE id = :d', { d: dupe.id });
+        deleted++;
+      }
+      // a player now has the same spell at the keeper twice: keep the oldest row
+      const [, removed] = await q(`DELETE FROM careers c USING careers d
+                 WHERE c.team_id = :k AND d.team_id = :k AND c.player_id = d.player_id AND c.from_year = d.from_year
+                   AND c.to_year IS NOT DISTINCT FROM d.to_year AND c.type = d.type
+                   AND c.loan IS NOT DISTINCT FROM d.loan AND c.id > d.id`, { k: keeper.id });
+      careersRemoved += removed.rowCount || 0;
+    });
+  }
+  logger.info(`Teams merged: ${deleted} extra teams deleted; careers moved ${careersMoved}, exact copies removed ${careersRemoved}; team seasons moved ${seasonsMoved}, merged into existing ${seasonsMerged}.`);
+  return { clusters: clusters.length, dupes: dupeCount, applied: true };
+}
+
 // Merge duplicate players that are already in the database.
 //   default: same name_basic + birth date AND the same Wikipedia page (links compared decoded)
 //   loose:   same name_basic + birth date even if the page differs (renamed pages, redirects)
@@ -1891,6 +2007,8 @@ async function mergeDuplicatePlayers({ apply = false, loose = false } = {}) {
 }
 
 module.exports = {
+  mergeDuplicateTeams,
+  findOrCreateTeam,
   findOrCreatePlayer,
   cleanFootnoteNames,
   mergeDuplicatePlayers,

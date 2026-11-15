@@ -12,6 +12,7 @@ const {
     refreshPlayers,
     mergeDuplicatePlayers,
     cleanFootnoteNames,
+    mergeDuplicateTeams,
     currentSeasonStartYear,
     latestProcessedSeason,
     processEuro2024Players,
@@ -108,7 +109,7 @@ const argv = yargs(hideBin(process.argv))
   .option('func', {
     alias: 'f',
     description: 'Specify which function to execute',
-    choices: ['league', 'internationalLeague', 'players', 'teams', 'addPlayer', 'refreshPlayers', 'mergeDuplicates', 'cleanFootnoteNames'],
+    choices: ['league', 'internationalLeague', 'players', 'teams', 'addPlayer', 'refreshPlayers', 'mergeDuplicates', 'cleanFootnoteNames', 'mergeTeams'],
     demandOption: true,
   })
   .option('leagueName', {
@@ -198,6 +199,9 @@ const argv = yargs(hideBin(process.argv))
     } else if (argv.func === 'mergeDuplicates') {
       await mergeDuplicatePlayers({ apply: argv.apply, loose: argv.loose });
       console.log('mergeDuplicates finished');
+    } else if (argv.func === 'mergeTeams') {
+      await mergeDuplicateTeams({ apply: argv.apply });
+      console.log('mergeTeams finished');
     } else if (argv.func === 'cleanFootnoteNames') {
       await cleanFootnoteNames({ apply: argv.apply });
       console.log('cleanFootnoteNames finished');
