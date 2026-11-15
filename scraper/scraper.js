@@ -508,8 +508,13 @@ const SQUAD_HEADINGS = [
   "Season squad", "Statistics", "Player details", "Current squad"
 ];
 
+// Footnote markers such as "[3]", "[42]", "[notes 2]" or "[a]"
+const FOOTNOTE_RE = /\s*\[[^\]]*\]/g;
+const HAS_FOOTNOTE = /\[[^\]]*\]/;   // stateless test (a /g regex keeps lastIndex between calls)
+
 function cleanPlayerName(raw) {
   return raw
+    .replace(FOOTNOTE_RE, '')                // remove footnote markers
     .replace(/\s*\([^)]*\)/g, '')            // remove brackets and their content
     .replace(/[†¤‡]/g, '')    // remove †, ¤, ‡
     .replace(/U\d+/g, '')                    // remove 'UX' pattern
@@ -1764,6 +1769,52 @@ async function mergeIfDuplicate(playerId) {
   }
 }
 
+// Players saved with footnote markers in their name ("Steed Malbranque[notes 2]"): merge them into the clean row
+// for the same Wikipedia page, or just strip the marker when there is no clean row. Dry run unless apply = true.
+async function cleanFootnoteNames({ apply = false } = {}) {
+  const rows = await Player.findAll({ attributes: ['id', 'name', 'name_basic', 'wiki_link'], order: [['id', 'ASC']], raw: true });
+  const strip = (v) => (v == null ? v : v.replace(FOOTNOTE_RE, '').trim());
+
+  const byLink = new Map();
+  for (const r of rows) {
+    if (!r.wiki_link) continue;
+    const k = normalizeWikiLink(r.wiki_link);
+    if (!byLink.has(k)) byLink.set(k, []);
+    byLink.get(k).push(r);
+  }
+
+  const plan = [];   // { keeper, absorb: [rows], rename: bool }
+  for (const members of byLink.values()) {
+    const junk = members.filter(m => HAS_FOOTNOTE.test(m.name) || HAS_FOOTNOTE.test(m.name_basic || ''));
+    if (!junk.length) continue;
+    const cleanName = strip(junk[0].name);
+    const sameName = members.filter(m => strip(m.name) === cleanName);   // same person once markers are ignored
+    const clean = sameName.filter(m => !junk.includes(m));
+    const keeper = clean.length ? clean[0] : sameName[0];
+    plan.push({ keeper, rename: junk.includes(keeper), absorb: sameName.filter(m => m.id !== keeper.id) });
+  }
+
+  const absorbCount = plan.reduce((n, p) => n + p.absorb.length, 0);
+  const renameCount = plan.filter(p => p.rename).length;
+  logger.info(`Footnote names: ${plan.length} players affected; ${absorbCount} rows to merge into a clean row, ${renameCount} rows to just rename.`);
+  for (const p of plan.slice(0, 10)) {
+    logger.info(`  e.g. keep ${p.keeper.id} "${p.keeper.name}"${p.rename ? ' (rename)' : ''}; merge ${p.absorb.map(a => `${a.id} "${a.name}"`).join(', ') || 'nothing'}`);
+  }
+  if (!apply) { logger.info('Dry run only. Re-run with --apply.'); return { affected: plan.length, applied: false }; }
+
+  const counters = newCounters();
+  for (const p of plan) {
+    await db.transaction(async (t) => {
+      for (const a of p.absorb) await absorbPlayer(p.keeper.id, a.id, t, counters);
+      if (p.rename) {
+        await Player.update({ name: strip(p.keeper.name), name_basic: strip(p.keeper.name_basic) }, { where: { id: p.keeper.id }, transaction: t });
+      }
+    });
+  }
+  logger.info(`Footnote names cleaned: ${counters.deleted} rows merged away, ${plan.filter(p => p.rename).length} renamed; careers moved ${counters.movedCareers}, dropped ${counters.droppedCareers}; squad links moved ${counters.movedLinks}, dropped ${counters.droppedLinks}.`);
+  return { affected: plan.length, applied: true };
+}
+
 // Merge duplicate players that are already in the database.
 //   default: same name_basic + birth date AND the same Wikipedia page (links compared decoded)
 //   loose:   same name_basic + birth date even if the page differs (renamed pages, redirects)
@@ -1828,6 +1879,7 @@ async function mergeDuplicatePlayers({ apply = false, loose = false } = {}) {
 
 module.exports = {
   findOrCreatePlayer,
+  cleanFootnoteNames,
   mergeDuplicatePlayers,
   mergeIfDuplicate,
   normalizeWikiLink,

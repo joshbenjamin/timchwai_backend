@@ -11,6 +11,7 @@ const {
     processPlayers,
     refreshPlayers,
     mergeDuplicatePlayers,
+    cleanFootnoteNames,
     currentSeasonStartYear,
     latestProcessedSeason,
     processEuro2024Players,
@@ -107,7 +108,7 @@ const argv = yargs(hideBin(process.argv))
   .option('func', {
     alias: 'f',
     description: 'Specify which function to execute',
-    choices: ['league', 'internationalLeague', 'players', 'teams', 'addPlayer', 'refreshPlayers', 'mergeDuplicates'],
+    choices: ['league', 'internationalLeague', 'players', 'teams', 'addPlayer', 'refreshPlayers', 'mergeDuplicates', 'cleanFootnoteNames'],
     demandOption: true,
   })
   .option('leagueName', {
@@ -147,7 +148,7 @@ const argv = yargs(hideBin(process.argv))
     type: 'number',
   })
   .option('apply', {
-    description: 'mergeDuplicates: actually merge (default is a dry run that only reports)',
+    description: 'mergeDuplicates / cleanFootnoteNames: actually change data (default is a dry run that only reports)',
     type: 'boolean',
     default: false,
   })
@@ -192,6 +193,9 @@ const argv = yargs(hideBin(process.argv))
     } else if (argv.func === 'mergeDuplicates') {
       await mergeDuplicatePlayers({ apply: argv.apply, loose: argv.loose });
       console.log('mergeDuplicates finished');
+    } else if (argv.func === 'cleanFootnoteNames') {
+      await cleanFootnoteNames({ apply: argv.apply });
+      console.log('cleanFootnoteNames finished');
     } else if (argv.func === 'teams') {
       await teams();
       console.log('Processing all teams completed successfully');
