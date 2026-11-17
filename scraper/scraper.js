@@ -415,22 +415,24 @@ async function createTeamsAndTeamSeasonsForLeague(leagueName, startYear) {
         if (team) {
           const wikiLink = `${leagueSeason.from_year}–${leagueSeason.to_year.toString().slice(-2)}_${team.wiki_link}_season`;
 
-          await TeamSeason.findOrCreate({
-            where: {
-              league_position: teamData.pos,
-              played: teamData.played,
-              wins: teamData.wins,
-              draws: teamData.draws,
-              losses: teamData.losses,
-              goals_for: teamData.gf,
-              goals_against: teamData.ga,
-              goal_difference: teamData.gd,
-              points: teamData.points,
-              wiki_link: wikiLink,
-              team_id: team.id,
-              league_season_id: leagueSeason.id,
-            }
+          // A club has one row per league season. Match on that alone: matching on the link spelling or
+          // the table stats made a second row whenever either changed (a respelled link, a mid-season update).
+          const stats = {
+            league_position: teamData.pos,
+            played: teamData.played,
+            wins: teamData.wins,
+            draws: teamData.draws,
+            losses: teamData.losses,
+            goals_for: teamData.gf,
+            goals_against: teamData.ga,
+            goal_difference: teamData.gd,
+            points: teamData.points,
+          };
+          const [teamSeason, teamSeasonCreated] = await TeamSeason.findOrCreate({
+            where: { team_id: team.id, league_season_id: leagueSeason.id },
+            defaults: { ...stats, wiki_link: wikiLink },
           });
+          if (!teamSeasonCreated) await teamSeason.update(stats);  // keep the existing row's link, refresh the table
           teamSeasonsAdded++;
         }
       }
@@ -1862,7 +1864,17 @@ async function cleanFootnoteNames({ apply = false } = {}) {
 // Merge duplicate teams (the same club stored under differently spelled links). Dry run unless apply = true.
 // Keeper = the row with the most team seasons, then one with a logo, then the lowest id. Everything on the extra row
 // (careers, team seasons and their squads) is moved to the keeper; careers that become exact copies are removed.
-async function mergeDuplicateTeams({ apply = false } = {}) {
+async function mergeDuplicateTeams({ apply = false, keep = null, merge = [] } = {}) {
+  // Explicit pair: --keep <id> --merge <id> [<id> ...] for the same club stored under two different pages
+  if (keep && merge.length) {
+    const found = await db.query('SELECT id, name, wiki_link FROM teams WHERE id IN (:ids)',
+      { replacements: { ids: [keep, ...merge] }, type: QueryTypes.SELECT });
+    if (found.length !== 1 + merge.length) throw new Error(`Some of the team ids ${[keep, ...merge].join(', ')} do not exist`);
+    logger.info(`Explicit merge: keep ${found.find(t => t.id === keep).name} (${keep}); merge ${found.filter(t => t.id !== keep).map(t => `${t.id} ${t.name} (${t.wiki_link})`).join(', ')}`);
+    if (!apply) { logger.info('Dry run only. Re-run with --apply.'); return { applied: false }; }
+    return applyTeamClusters([{ keeper: { id: keep }, dupes: merge.map(id => ({ id })) }]);
+  }
+
   const teams = await db.query(
     `SELECT t.id, t.name, t.wiki_link, t.image, (SELECT COUNT(*) FROM team_seasons ts WHERE ts.team_id = t.id)::int AS seasons
        FROM teams t ORDER BY t.id`, { type: QueryTypes.SELECT });
@@ -1896,7 +1908,11 @@ async function mergeDuplicateTeams({ apply = false } = {}) {
     logger.info(`  same name, different page: ${m.map(x => `${x.id} ${x.name} (${x.wiki_link})`).join(' | ')}`);
   }
   if (!apply) { logger.info('Dry run only. Re-run with --apply.'); return { clusters: clusters.length, dupes: dupeCount, applied: false }; }
+  return applyTeamClusters(clusters, dupeCount);
+}
 
+async function applyTeamClusters(clusters, dupeCount = null) {
+  if (dupeCount === null) dupeCount = clusters.reduce((n, c) => n + c.dupes.length, 0);
   let careersMoved = 0, careersRemoved = 0, seasonsMoved = 0, seasonsMerged = 0, deleted = 0;
   for (const { keeper, dupes } of clusters) {
     await db.transaction(async (t) => {
@@ -1942,6 +1958,52 @@ async function mergeDuplicateTeams({ apply = false } = {}) {
   }
   logger.info(`Teams merged: ${deleted} extra teams deleted; careers moved ${careersMoved}, exact copies removed ${careersRemoved}; team seasons moved ${seasonsMoved}, merged into existing ${seasonsMerged}.`);
   return { clusters: clusters.length, dupes: dupeCount, applied: true };
+}
+
+// A club should have one team_seasons row per league season. Where there are several (the same club, the same
+// league season), keep the one with the biggest squad (lowest id on a tie), add the players only the others had,
+// fill any empty stats from them, and delete the extras. Dry run unless apply = true.
+async function mergeDuplicateTeamSeasons({ apply = false } = {}) {
+  const groups = await db.query(
+    `SELECT ts.team_id, ts.league_season_id, t.name, l.name AS league, ls.from_year,
+            array_agg(ts.id ORDER BY (SELECT COUNT(*) FROM player_team_seasons p WHERE p.team_season_id = ts.id) DESC, ts.id) AS ids
+       FROM team_seasons ts
+       JOIN teams t ON t.id = ts.team_id
+       JOIN league_seasons ls ON ls.id = ts.league_season_id
+       JOIN leagues l ON l.id = ls.league_id
+      GROUP BY ts.team_id, ts.league_season_id, t.name, l.name, ls.from_year
+     HAVING COUNT(*) > 1
+      ORDER BY l.name, ls.from_year, t.name`, { type: QueryTypes.SELECT });
+
+  const extra = groups.reduce((n, g) => n + g.ids.length - 1, 0);
+  logger.info(`Duplicate team seasons: ${groups.length} club-seasons stored more than once, ${extra} extra rows to merge.`);
+  for (const g of groups.slice(0, 10)) logger.info(`  e.g. ${g.league} ${g.from_year} ${g.name}: keep ${g.ids[0]}, merge ${g.ids.slice(1).join(', ')}`);
+  if (!apply) { logger.info('Dry run only. Re-run with --apply.'); return { groups: groups.length, extra, applied: false }; }
+
+  let linksMoved = 0, linksDropped = 0, deleted = 0;
+  for (const g of groups) {
+    await db.transaction(async (t) => {
+      const q = (sql, replacements) => db.query(sql, { replacements, transaction: t, type: QueryTypes.RAW });
+      const [keeper, ...dupes] = g.ids;
+      for (const d of dupes) {
+        const [, moved] = await q(`UPDATE player_team_seasons SET team_season_id = :k WHERE team_season_id = :d
+                  AND player_id NOT IN (SELECT player_id FROM player_team_seasons WHERE team_season_id = :k)`, { k: keeper, d });
+        linksMoved += moved.rowCount || 0;
+        const [, dropped] = await q('DELETE FROM player_team_seasons WHERE team_season_id = :d', { d });
+        linksDropped += dropped.rowCount || 0;
+        await q(`UPDATE team_seasons k SET league_position = COALESCE(k.league_position, d.league_position), played = COALESCE(k.played, d.played),
+                   wins = COALESCE(k.wins, d.wins), draws = COALESCE(k.draws, d.draws), losses = COALESCE(k.losses, d.losses),
+                   goals_for = COALESCE(k.goals_for, d.goals_for), goals_against = COALESCE(k.goals_against, d.goals_against),
+                   goal_difference = COALESCE(k.goal_difference, d.goal_difference), points = COALESCE(k.points, d.points),
+                   accolades = COALESCE(k.accolades, d.accolades)
+                 FROM team_seasons d WHERE k.id = :k AND d.id = :d`, { k: keeper, d });
+        await q('DELETE FROM team_seasons WHERE id = :d', { d });
+        deleted++;
+      }
+    });
+  }
+  logger.info(`Team seasons merged: ${deleted} extra rows deleted; squad links moved ${linksMoved}, duplicates dropped ${linksDropped}.`);
+  return { groups: groups.length, extra, applied: true };
 }
 
 // Merge duplicate players that are already in the database.
@@ -2008,6 +2070,7 @@ async function mergeDuplicatePlayers({ apply = false, loose = false } = {}) {
 
 module.exports = {
   mergeDuplicateTeams,
+  mergeDuplicateTeamSeasons,
   findOrCreateTeam,
   findOrCreatePlayer,
   cleanFootnoteNames,

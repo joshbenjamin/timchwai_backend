@@ -13,6 +13,7 @@ const {
     mergeDuplicatePlayers,
     cleanFootnoteNames,
     mergeDuplicateTeams,
+    mergeDuplicateTeamSeasons,
     currentSeasonStartYear,
     latestProcessedSeason,
     processEuro2024Players,
@@ -109,7 +110,7 @@ const argv = yargs(hideBin(process.argv))
   .option('func', {
     alias: 'f',
     description: 'Specify which function to execute',
-    choices: ['league', 'internationalLeague', 'players', 'teams', 'addPlayer', 'refreshPlayers', 'mergeDuplicates', 'cleanFootnoteNames', 'mergeTeams'],
+    choices: ['league', 'internationalLeague', 'players', 'teams', 'addPlayer', 'refreshPlayers', 'mergeDuplicates', 'cleanFootnoteNames', 'mergeTeams', 'mergeTeamSeasons'],
     demandOption: true,
   })
   .option('leagueName', {
@@ -163,6 +164,15 @@ const argv = yargs(hideBin(process.argv))
     type: 'boolean',
     default: false,
   })
+  .option('keep', {
+    description: 'mergeTeams: team id to keep (with --merge) for the same club stored under two different pages',
+    type: 'number',
+  })
+  .option('merge', {
+    description: 'mergeTeams: team id(s) to merge into --keep',
+    type: 'number',
+    array: true,
+  })
   .option('count', {
     alias: 'c',
     description: 'Specify the count for season calculation',
@@ -200,8 +210,11 @@ const argv = yargs(hideBin(process.argv))
       await mergeDuplicatePlayers({ apply: argv.apply, loose: argv.loose });
       console.log('mergeDuplicates finished');
     } else if (argv.func === 'mergeTeams') {
-      await mergeDuplicateTeams({ apply: argv.apply });
+      await mergeDuplicateTeams({ apply: argv.apply, keep: argv.keep, merge: argv.merge || [] });
       console.log('mergeTeams finished');
+    } else if (argv.func === 'mergeTeamSeasons') {
+      await mergeDuplicateTeamSeasons({ apply: argv.apply });
+      console.log('mergeTeamSeasons finished');
     } else if (argv.func === 'cleanFootnoteNames') {
       await cleanFootnoteNames({ apply: argv.apply });
       console.log('cleanFootnoteNames finished');
