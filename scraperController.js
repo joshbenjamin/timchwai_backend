@@ -142,6 +142,11 @@ const argv = yargs(hideBin(process.argv))
     type: 'boolean',
     default: false,
   })
+  .option('prune', {
+    description: 'refreshPlayers: also list careers stored for a player that their Wikipedia page no longer shows (removed only with --apply)',
+    type: 'boolean',
+    default: false,
+  })
   .option('season', {
     description: 'league: load only this season, given as its start year (2025 = 2025/26)',
     type: 'number',
@@ -204,7 +209,8 @@ const argv = yargs(hideBin(process.argv))
       await players();
       console.log('Processing all players completed successfully');
     } else if (argv.func === 'refreshPlayers') {
-      await refreshPlayers({ limit: argv.limit, name: argv.name, missingPositions: argv.missingPositions });
+      await refreshPlayers({ limit: argv.limit, name: argv.name, missingPositions: argv.missingPositions,
+        prune: argv.prune ? (argv.apply ? 'apply' : 'report') : null });
       console.log('Refreshing players completed');
     } else if (argv.func === 'mergeDuplicates') {
       await mergeDuplicatePlayers({ apply: argv.apply, loose: argv.loose });

@@ -1116,11 +1116,16 @@ async function processEuro2024Players(){
 // for the same person, if one exists (same name_basic + birth date), so renamed Wikipedia pages
 // ("Joe_Gomez" vs "Joe_Gomez_(footballer)") do not leave two rows behind.
 async function processPlayer(player, opts = {}) {
-  await processPlayerPage(player, opts);
+  const result = await processPlayerPage(player, opts);
   if (!opts.refresh) await mergeIfDuplicate(player.id);
+  return result;
 }
 
-async function processPlayerPage(player, { refresh = false } = {}){
+// prune: null | 'report' | 'apply'. After the careers are read from the page, careers stored for this player
+// that are NOT on the page any more (a wrong club from older data, a spell Wikipedia has since corrected) are
+// listed ('report') or deleted ('apply'). Skipped for a player when any career row could not be read, or when it
+// would remove more than half of their careers (a sign the page layout changed, not that the data is wrong).
+async function processPlayerPage(player, { refresh = false, prune = null } = {}){
   if (player){
     logger.info(`Found ${player.name}`);
   } else {
@@ -1249,6 +1254,8 @@ async function processPlayerPage(player, { refresh = false } = {}){
     let currentType = '';
     let careersFound = false;
     let careersCreated = 0;
+    const seenCareers = new Set();   // `${from_year}|${type}|${team_id}|${loan}` of every career found on the page
+    let unreadRows = 0;              // career rows we could not read: pruning is unsafe for this player then
 
     const numRows = tableRows.length;
     logger.info(`Number of rows in table: ${numRows}`);
@@ -1304,10 +1311,12 @@ async function processPlayerPage(player, { refresh = false } = {}){
               fromYear = parseInt(yearParts[0], 10);
               if (isNaN(fromYear)){
                 logger.error(`Not creating career with incomplete year information for ${player.wiki_link}`);
+                unreadRows++;
                 continue;
               }
             } catch (error) {
               logger.error(`Trying to parse fromYear for ${player.name} - ${years}`);
+              unreadRows++;
               continue;
             }
             if (yearParts.length > 1){
@@ -1325,7 +1334,7 @@ async function processPlayerPage(player, { refresh = false } = {}){
             }
           } else {
             logger.error(`No years for ${player.name} at ${teamElement.find('sup.reference').remove().text().trim()}, not creating Career`);
-            continue;
+            continue;   // no years at all: such a row can never have become a stored career, so it does not block pruning
           }
 
           // This happens at times, do this instead of calling seperate correct Careers funct
@@ -1386,6 +1395,8 @@ async function processPlayerPage(player, { refresh = false } = {}){
             team = teamWithName;
           }
 
+          seenCareers.add(`${fromYear}|${currentType}|${team.id}|${onLoan}`);
+
           let whereObj = {
             from_year: fromYear,
             type: currentType,
@@ -1429,6 +1440,30 @@ async function processPlayerPage(player, { refresh = false } = {}){
         }
       }
     };
+
+    // Careers stored for this player that the page no longer lists
+    if (prune && careersFound && seenCareers.size > 0) {
+      const stored = await Career.findAll({ where: { player_id: player.id } });
+      const stale = stored.filter(c => !seenCareers.has(`${c.from_year}|${c.type}|${c.team_id}|${!!c.loan}`));
+      if (stale.length) {
+        const teamRows = await Team.findAll({ where: { id: stale.map(c => c.team_id) }, attributes: ['id', 'name'], raw: true });
+        const teamName = new Map(teamRows.map(t => [t.id, t.name]));
+        const describe = c => `${c.id} ${teamName.get(c.team_id) || c.team_id} ${c.from_year}-${c.to_year ?? ''} ${c.type}${c.loan ? ' (loan)' : ''}`;
+        if (unreadRows > 0) {
+          logger.info(`Prune skipped for ${player.name}: ${unreadRows} career row(s) could not be read`);
+        } else if (stale.length > Math.ceil(stored.length / 2)) {
+          logger.info(`Prune skipped for ${player.name}: would remove ${stale.length} of ${stored.length} careers`);
+        } else {
+          logger.info(`Stale careers for ${player.name} (${player.id}): ${stale.map(describe).join('; ')}`);
+          if (prune === 'apply') {
+            await Career.destroy({ where: { id: stale.map(c => c.id) } });
+            logger.info(`Removed ${stale.length} stale career(s) for ${player.name}`);
+          }
+          return { stale: stale.length };
+        }
+      }
+    }
+    return { stale: 0 };
   } else {
     throw new Error(`Response didn't make it`);
   }
@@ -1736,7 +1771,7 @@ async function deleteDuplicatePlayers(){
 
 // Re-scrape existing players (careers, apps, goals, bio), least recently updated first.
 // Safe to re-run: careers are findOrCreate + update, and existing values/images are preserved.
-async function refreshPlayers({ limit = 50, name = null, missingPositions = false } = {}) {
+async function refreshPlayers({ limit = 50, name = null, missingPositions = false, prune = null } = {}) {
   const where = { name_basic: { [Op.ne]: null }, wiki_link: { [Op.ne]: null } };
   if (missingPositions) {
     where[Op.and] = [Sequelize.literal("(positions IS NULL OR positions = '{}')")];
@@ -1750,9 +1785,12 @@ async function refreshPlayers({ limit = 50, name = null, missingPositions = fals
 
   let ok = 0;
   let failed = 0;
+  let staleTotal = 0;
+  let stalePlayers = 0;
   for (let i = 0; i < players.length; i++) {
     try {
-      await processPlayer(players[i], { refresh: true });
+      const result = await processPlayer(players[i], { refresh: true, prune });
+      if (result && result.stale) { staleTotal += result.stale; stalePlayers++; }
       ok++;
     } catch (error) {
       failed++;
@@ -1761,6 +1799,7 @@ async function refreshPlayers({ limit = 50, name = null, missingPositions = fals
     logger.info(`Refreshed ${i + 1} of ${players.length} (${failed} failed)`);
   }
   logger.info(`Refresh done: ${ok} processed, ${failed} failed`);
+  if (prune) logger.info(`Stale careers ${prune === 'apply' ? 'removed' : 'found (not removed, re-run with --apply)'}: ${staleTotal} across ${stalePlayers} players`);
 }
 
 async function addBaseWikiPlayer(link){
